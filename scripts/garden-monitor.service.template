@@ -1,0 +1,16 @@
+[Unit]
+Description=Garden Monitor Pi Camera Server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+WorkingDirectory={{WORKING_DIR}}
+ExecStart={{WORKING_DIR}}/scripts/start.sh --fg
+Environment=XDG_RUNTIME_DIR={{XDG_RUNTIME_DIR}}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

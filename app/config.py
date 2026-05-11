@@ -73,16 +73,16 @@ CAM_CTRL_DEFAULTS = {
     "awb_mode":       "auto",   # "auto" | "manual"
     "awb_kelvin":      5000,    # colour temperature K (2000–7500), active when awb_mode=manual
     "brightness":      0,       # −100…+100 → V4L2 0–255 (neutral 128)
-    "saturation":      0,       # −100…+100 → V4L2 0–255 (neutral 128)
-    "sharpness":       1.0,     # 0–4 → V4L2 0–255 (neutral 128)
+    "saturation":      40,      # −100…+100 → V4L2 0–255 (neutral 128)
+    "sharpness":       1.5,     # 0–4 → V4L2 0–255 (neutral 128)
     "contrast":        1.0,     # 0–4 → V4L2 0–255 (neutral 128)
-    "noise_reduction": "fast",  # kept for API compat; not applied on C930e/V4L2
+    "noise_reduction": "off",   # kept for API compat; not applied on C930e/V4L2
     # Autofocus (picamera2 / IMX708 only)
     "af_mode":  "continuous",   # "continuous" | "auto" | "manual"
     "af_range": "normal",       # "normal" (30cm–∞) | "macro" (3–30cm) | "full" (3cm–∞)
     # Post-capture: OpenCV per-frame
     "tint":        0,           # −100 (green) … +100 (magenta)
-    "warmth":      0,          # −100 (cool/blue) … +100 (warm/orange); default corrects C930e cold bias
+    "warmth":      40,         # −100 (cool/blue) … +100 (warm/orange); default corrects C930e cold bias
     "hflip":       bool(_cfg["camera"].get("hflip", False)),
     "vflip":       bool(_cfg["camera"].get("vflip", False)),
     "film_filter": "none",

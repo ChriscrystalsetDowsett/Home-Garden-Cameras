@@ -57,25 +57,7 @@ if [ ! -f "$UNIT_FILE" ]; then
     echo ""
     read -rp "==> Install as a systemd service (starts on boot)? [y/N] " REPLY
     if [[ "${REPLY,,}" == "y" ]]; then
-        USER_NAME="$(whoami)"
-        sudo tee "$UNIT_FILE" > /dev/null <<EOF
-[Unit]
-Description=Garden Monitor Pi Camera Server
-After=network.target
-
-[Service]
-Type=simple
-User=$USER_NAME
-WorkingDirectory=$PROJECT_DIR
-ExecStart=/usr/bin/python3 $PROJECT_DIR/run.py
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-        sudo systemctl daemon-reload
-        sudo systemctl enable garden-monitor
+        bash "$SCRIPT_DIR/install_service.sh"
         echo "    Systemd service installed. Start it with: sudo systemctl start garden-monitor"
     fi
 fi

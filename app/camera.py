@@ -10,7 +10,7 @@ from .config import SNAPSHOT_DIR, RESOLUTIONS, CAM_CTRL_DEFAULTS, DEFAULT_RESOLU
 from .film import FILM_FILTERS
 from .postprocess import postprocess_jpeg
 
-FPS          = 24
+FPS          = 30
 JPEG_QUALITY = 85
 V4L2_DEVICE  = "/dev/video0"
 
@@ -252,6 +252,10 @@ class CameraManager:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
         cap.set(cv2.CAP_PROP_FPS,          FPS)
         cap.set(cv2.CAP_PROP_BUFFERSIZE,   1)
+        subprocess.run(
+            ["v4l2-ctl", "-d", V4L2_DEVICE, "--set-ctrl=exposure_dynamic_framerate=0"],
+            capture_output=True, check=False,
+        )
         self.model = "C930e"
         return cap
 
