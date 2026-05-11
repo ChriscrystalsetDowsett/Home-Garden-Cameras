@@ -146,6 +146,7 @@ function openDrawer(tile) {
 
   document.getElementById('drawer-title').textContent    = tile.dataset.name;
   document.getElementById('drawer-full-btn').href        = tile.dataset.fullUrl;
+  document.getElementById('drawer-greenhouse-wrap').style.display = activeIdx === 2 ? '' : 'none';
   document.getElementById('drawer-offline-msg').classList.remove('show');
   document.getElementById('drawer-status').textContent   = '';
   document.getElementById('drawer-tl-strip').style.display = 'none';

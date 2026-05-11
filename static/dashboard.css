@@ -518,7 +518,7 @@ body.drawer-fake-fs #drawer {
 body.drawer-fake-fs .drawer-handle,
 body.drawer-fake-fs .drawer-header,
 body.drawer-fake-fs .drawer-actions,
-body.drawer-fake-fs .drawer-full-wrap,
+body.drawer-fake-fs .drawer-full-row,
 body.drawer-fake-fs .drawer-status,
 body.drawer-fake-fs .drawer-tl-strip {
   display: none !important;
@@ -536,25 +536,31 @@ body.drawer-fake-fs .drawer-stream-wrap {
 
 
 /* In-drawer full controls link */
+.drawer-full-row {
+  display: flex;
+  gap: 12px;
+  padding: 0 18px 4px;
+}
 .drawer-full-wrap {
   display: block;
-  padding: 0 18px 4px;
+  flex: 1;
+  min-width: 0;
 }
 .drawer-full-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 12px 16px;
-  border: 1px solid var(--border);
+  padding: 14px 16px;
+  border: 1px solid var(--green-dk);
   border-radius: var(--radius);
-  color: var(--muted);
+  color: var(--text);
   text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  transition: color 0.15s, border-color 0.15s;
+  font-size: 15px;
+  font-weight: 600;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
-.drawer-full-btn:hover { color: var(--green); border-color: var(--green-dk); }
+.drawer-full-btn:hover { color: var(--green-lt); border-color: var(--green); background: rgba(34,197,94,0.08); }
 
 /* Drawer status line */
 .drawer-status {
@@ -611,6 +617,7 @@ body.drawer-fake-fs .drawer-stream-wrap {
   .action-btn { font-size: 13px; padding: 12px 10px; min-width: 80px; }
   /* Header link hidden — the in-drawer button takes its place */
   .full-link { display: none; }
+  .drawer-full-row { display: flex; }
   .drawer-full-wrap { display: block; }
 }
 

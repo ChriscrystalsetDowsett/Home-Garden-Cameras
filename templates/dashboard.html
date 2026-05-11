@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Garden Cams">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
 <title>Home Garden Cameras</title>
-<link rel="stylesheet" href="/static/dashboard.css?v=5">
+<link rel="stylesheet" href="/static/dashboard.css?v=6">
 </head>
 <body>
 
@@ -130,10 +130,18 @@
     </button>
   </div>
 
-  <div class="drawer-full-wrap">
-    <a id="drawer-full-btn" href="#" target="_blank" rel="noopener" class="drawer-full-btn">
-      Open full controls →
-    </a>
+  <div class="drawer-full-row">
+    <div class="drawer-full-wrap">
+      <a id="drawer-full-btn" href="#" target="_blank" rel="noopener" class="drawer-full-btn">
+        Open full controls →
+      </a>
+    </div>
+
+    <div class="drawer-full-wrap" id="drawer-greenhouse-wrap" style="display:none">
+      <a href="https://greenhouse.chrisdowsett.com" target="_blank" rel="noopener noreferrer" class="drawer-full-btn">
+        Greenhouse Monitor →
+      </a>
+    </div>
   </div>
 
   <!-- Timelapse countdown strip -->
@@ -161,6 +169,6 @@
 <div class="toast" id="toast"></div>
 
 
-<script src="/static/dashboard.js?v=8"></script>
+<script src="/static/dashboard.js?v=11"></script>
 </body>
 </html>
