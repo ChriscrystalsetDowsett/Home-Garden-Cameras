@@ -402,6 +402,8 @@ class CameraManager:
                     f"{actual_w}x{actual_h} @ {FPS}fps MJPEG",
                     flush=True,
                 )
+                with cam_ctrl_lock:
+                    self.apply_isp_controls(dict(cam_ctrl))
 
                 # ── Capture loop ───────────────────────────────────────────────
                 buf = _v4l2.v4l2_buffer()
@@ -623,6 +625,8 @@ class CameraManager:
         with self.lock:
             handle = self._handle
         if handle is None:
+            if CAM_BACKEND == "v4l2" and V4L2_MODE == "passthrough":
+                self._isp_v4l2_passthrough(c)
             return
 
         if CAM_BACKEND == "picamera2":
@@ -696,6 +700,65 @@ class CameraManager:
             contrast = float(c.get("contrast", 1.0))
             cv_val = int(contrast * 128) if contrast <= 1.0 else int(128 + (contrast - 1.0) / 3.0 * 127)
             cap.set(cv2.CAP_PROP_CONTRAST, max(0, min(255, cv_val)))
+        except Exception:
+            pass
+
+    def _isp_v4l2_passthrough(self, c):
+        """Apply hardware V4L2 controls via v4l2-ctl for the MJPEG passthrough path.
+
+        The passthrough loop has no cv2.VideoCapture handle, so we must use
+        v4l2-ctl subprocess calls instead of cap.set().  Uses the same value
+        mapping as _isp_v4l2() so behaviour is identical to the OpenCV path.
+        """
+        try:
+            exp = int(c.get("exposure_time", 0))
+            if exp > 0:
+                subprocess.run(
+                    ["v4l2-ctl", "-d", V4L2_DEVICE,
+                     f"--set-ctrl=auto_exposure=1,exposure_time_absolute={max(3, exp // 100)}"],
+                    capture_output=True, check=False,
+                )
+            else:
+                subprocess.run(
+                    ["v4l2-ctl", "-d", V4L2_DEVICE, "--set-ctrl=auto_exposure=3"],
+                    capture_output=True, check=False,
+                )
+
+            gain = float(c.get("analogue_gain", 0.0))
+            if gain > 0:
+                gain_v4l2 = int(min(255, max(0, gain / 16.0 * 255)))
+                subprocess.run(
+                    ["v4l2-ctl", "-d", V4L2_DEVICE, f"--set-ctrl=gain={gain_v4l2}"],
+                    capture_output=True, check=False,
+                )
+
+            if c.get("awb_mode", "auto") == "auto":
+                subprocess.run(
+                    ["v4l2-ctl", "-d", V4L2_DEVICE, "--set-ctrl=white_balance_automatic=1"],
+                    capture_output=True, check=False,
+                )
+            else:
+                kelvin = max(2000, min(7500, int(c.get("awb_kelvin", 5600))))
+                subprocess.run(
+                    ["v4l2-ctl", "-d", V4L2_DEVICE,
+                     f"--set-ctrl=white_balance_automatic=0,white_balance_temperature={kelvin}"],
+                    capture_output=True, check=False,
+                )
+
+            b     = int(c.get("brightness", 0))
+            sat   = int(c.get("saturation", 0))
+            sharp = float(c.get("sharpness", 1.0))
+            sv    = int(sharp * 128) if sharp <= 1.0 else int(128 + (sharp - 1.0) / 3.0 * 127)
+            ctr   = float(c.get("contrast", 1.0))
+            cv    = int(ctr * 128) if ctr <= 1.0 else int(128 + (ctr - 1.0) / 3.0 * 127)
+            subprocess.run(
+                ["v4l2-ctl", "-d", V4L2_DEVICE,
+                 f"--set-ctrl=brightness={max(0, min(255, 128 + b * 127 // 100))},"
+                 f"saturation={max(0, min(255, 128 + sat * 127 // 100))},"
+                 f"sharpness={max(0, min(255, sv))},"
+                 f"contrast={max(0, min(255, cv))}"],
+                capture_output=True, check=False,
+            )
         except Exception:
             pass
 
