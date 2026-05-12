@@ -10,7 +10,7 @@ let   _tlPollMs      = 1000;   // adaptive: 1 s (fast interval) → 30 s (slow i
 let   statsTimer   = null;
 let   _tickTimer   = null;
 let   streamOnline = false;
-let   currentRes   = '1280x720';
+let   currentRes   = '1920x1080';
 let   recording    = false;
 let   recordTimer  = null;
 let   recordStart  = null;
@@ -31,7 +31,7 @@ let   _audioCtx       = null;
 let   _audioReader    = null;
 let   _audioNext      = 0;
 let   _audioLeftover  = null;
-let   recTargetRes = '1280x720';
+let   recTargetRes = '1920x1080';
 let   snapFilter   = 'none';
 let   snapQuality  = 95;
 let   camEnabled   = true;
@@ -346,7 +346,7 @@ async function loadInfo() {
     const model = (d.camera || '').toUpperCase();
     camModel = MODEL_NAMES[model] || d.camera || '?';
     document.getElementById('camera-model').textContent = camModel;
-    setResDisplay(d.resolution || '1280x720');
+    setResDisplay(d.resolution || '1920x1080');
     if (d.model) {
       piModel = shortPiModel(d.model);
       document.getElementById('ic-pi').textContent = piModel;

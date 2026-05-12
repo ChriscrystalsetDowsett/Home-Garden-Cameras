@@ -35,6 +35,7 @@ if DEFAULT_RESOLUTION not in RESOLUTIONS:
 STREAM_JPEG_QUALITY = max(1, min(95, int(_cfg["camera"].get("stream_quality", 60))))
 
 CAM_BACKEND = _cfg["camera"].get("backend", "picamera2")   # "picamera2" | "v4l2"
+V4L2_MODE   = _cfg["camera"].get("v4l2_mode", "passthrough")  # "passthrough" | "opencv"
 
 # ── Dashboard camera list ─────────────────────────────────────────────────────
 CAMERAS            = _cfg.get("cameras", [])
@@ -82,7 +83,7 @@ CAM_CTRL_DEFAULTS = {
     "af_range": "normal",       # "normal" (30cm–∞) | "macro" (3–30cm) | "full" (3cm–∞)
     # Post-capture: OpenCV per-frame
     "tint":        0,           # −100 (green) … +100 (magenta)
-    "warmth":      40,         # −100 (cool/blue) … +100 (warm/orange); default corrects C930e cold bias
+    "warmth":      0,          # −100 (cool/blue) … +100 (warm/orange); 0 required for passthrough to skip decode/encode
     "hflip":       bool(_cfg["camera"].get("hflip", False)),
     "vflip":       bool(_cfg["camera"].get("vflip", False)),
     "film_filter": "none",

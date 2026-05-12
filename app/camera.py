@@ -1,12 +1,12 @@
 """Camera hardware management — supports picamera2 (CSI) and V4L2/OpenCV (USB)."""
-import io, time, threading, subprocess
+import ctypes, fcntl, io, logging, mmap, os, select, time, threading, subprocess
 from datetime import datetime
 
 import cv2
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
-from .config import SNAPSHOT_DIR, RESOLUTIONS, CAM_CTRL_DEFAULTS, DEFAULT_RESOLUTION, CAM_BACKEND, STREAM_JPEG_QUALITY
+from .config import SNAPSHOT_DIR, RESOLUTIONS, CAM_CTRL_DEFAULTS, DEFAULT_RESOLUTION, CAM_BACKEND, STREAM_JPEG_QUALITY, V4L2_MODE
 from .film import FILM_FILTERS
 from .postprocess import postprocess_jpeg
 
@@ -17,6 +17,13 @@ V4L2_DEVICE  = "/dev/video0"
 # Optional picamera2 import — only needed on CSI camera Pis.
 if CAM_BACKEND == "picamera2":
     from picamera2 import Picamera2
+
+# Optional v4l2 ctypes bindings — needed only for the MJPEG passthrough path.
+if CAM_BACKEND == "v4l2":
+    try:
+        import v4l2 as _v4l2
+    except ImportError:
+        _v4l2 = None
 
 # ── Live camera controls (per-frame effects) ───────────────────────────────────
 cam_ctrl      = dict(CAM_CTRL_DEFAULTS)
@@ -233,6 +240,228 @@ class CameraManager:
                     break
                 backoff = min(backoff * 2, 30)
 
+    # ── V4L2 MJPEG passthrough (no decode/encode) ─────────────────────────────
+
+    def _usb_reset_camera(self):
+        """Reset the C930e via USBDEVFS_RESET to recover from firmware hangs.
+
+        The C930e can silently stop sending frames after STREAMOFF without
+        disconnecting from USB. A soft reset restores it without a physical
+        replug. Requires plugdev write access to /dev/bus/usb (set by udev rule
+        in /etc/udev/rules.d/99-c930e-power.rules).
+        """
+        USBDEVFS_RESET = 0x5514
+        try:
+            for entry in os.scandir("/sys/bus/usb/devices"):
+                try:
+                    vendor  = open(os.path.join(entry.path, "idVendor")).read().strip()
+                    product = open(os.path.join(entry.path, "idProduct")).read().strip()
+                except OSError:
+                    continue
+                if vendor == "046d" and product == "0843":
+                    busnum = int(open(os.path.join(entry.path, "busnum")).read().strip())
+                    devnum = int(open(os.path.join(entry.path, "devnum")).read().strip())
+                    dev_path = f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"
+                    fd = os.open(dev_path, os.O_WRONLY)
+                    try:
+                        fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+                        logging.info("v4l2 passthrough: USB reset sent to %s", dev_path)
+                    finally:
+                        os.close(fd)
+                    time.sleep(3)
+                    return
+            logging.warning("v4l2 passthrough: C930e not found in sysfs for USB reset")
+        except OSError as e:
+            logging.warning("v4l2 passthrough: USB reset failed: %s", e)
+
+    def _loop_v4l2_passthrough(self):
+        """Capture raw MJPEG bytes via V4L2 mmap streaming — no decode/encode.
+
+        The C930e sends hardware-compressed MJPEG over USB. This path maps the
+        driver buffers directly and copies bytes into StreamOutput, bypassing
+        the cv2.VideoCapture decode→encode round trip that costs ~75% of a core.
+        Returns False only when MJPG format is permanently rejected by the driver.
+        """
+        NUM_BUFS    = 4
+        backoff     = 1
+        invalid_run = 0
+        LOG_EVERY   = 50
+        SELECT_TIMEOUT_LIMIT = 5   # seconds of no frames → camera is hung
+
+        while not self._stop.is_set():
+            self._restart.clear()
+            fd    = None
+            mmaps = []
+            try:
+                # Apply hardware controls via subprocess before opening the fd.
+                # auto_exposure=3 = aperture priority (auto); without this the
+                # camera may default to manual exposure and appear overexposed.
+                with cam_ctrl_lock:
+                    ctrl = dict(cam_ctrl)
+                exp = int(ctrl.get("exposure_time", 0))
+                if exp > 0:
+                    subprocess.run(
+                        ["v4l2-ctl", "-d", V4L2_DEVICE,
+                         f"--set-ctrl=auto_exposure=1,exposure_time_absolute={max(3, exp // 100)}"],
+                        capture_output=True, check=False,
+                    )
+                else:
+                    subprocess.run(
+                        ["v4l2-ctl", "-d", V4L2_DEVICE, "--set-ctrl=auto_exposure=3"],
+                        capture_output=True, check=False,
+                    )
+                subprocess.run(
+                    ["v4l2-ctl", "-d", V4L2_DEVICE, "--set-ctrl=exposure_dynamic_framerate=0"],
+                    capture_output=True, check=False,
+                )
+                if ctrl.get("awb_mode", "auto") == "auto":
+                    subprocess.run(
+                        ["v4l2-ctl", "-d", V4L2_DEVICE, "--set-ctrl=white_balance_automatic=1"],
+                        capture_output=True, check=False,
+                    )
+                else:
+                    kelvin = max(2000, min(7500, int(ctrl.get("awb_kelvin", 5600))))
+                    subprocess.run(
+                        ["v4l2-ctl", "-d", V4L2_DEVICE,
+                         f"--set-ctrl=white_balance_automatic=0,white_balance_temperature={kelvin}"],
+                        capture_output=True, check=False,
+                    )
+
+                fd = os.open(V4L2_DEVICE, os.O_RDWR)
+                w, h = self.resolution
+
+                # ── Set frame interval BEFORE format (UVC requires this order) ─
+                # VIDIOC_S_PARM before S_FMT so the kernel embeds the frame
+                # interval in the UVC probe-commit negotiation at VIDIOC_REQBUFS.
+                parm = _v4l2.v4l2_streamparm()
+                parm.type = _v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE
+                parm.parm.capture.timeperframe.numerator   = 1
+                parm.parm.capture.timeperframe.denominator = FPS
+                try:
+                    fcntl.ioctl(fd, _v4l2.VIDIOC_S_PARM, parm)
+                    n = parm.parm.capture.timeperframe.numerator
+                    d = parm.parm.capture.timeperframe.denominator
+                    actual_fps = d / max(n, 1)
+                    if d and abs(actual_fps - FPS) > 0.5:
+                        logging.info(
+                            "v4l2 passthrough: fps negotiated to %.1f (requested %d)", actual_fps, FPS,
+                        )
+                except OSError:
+                    pass
+
+                # ── Set MJPEG format ───────────────────────────────────────────
+                fmt = _v4l2.v4l2_format()
+                fmt.type = _v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE
+                fmt.fmt.pix.width       = w
+                fmt.fmt.pix.height      = h
+                fmt.fmt.pix.pixelformat = _v4l2.V4L2_PIX_FMT_MJPEG
+                fcntl.ioctl(fd, _v4l2.VIDIOC_S_FMT, fmt)
+
+                if fmt.fmt.pix.pixelformat != _v4l2.V4L2_PIX_FMT_MJPEG:
+                    logging.error("v4l2 passthrough: camera rejected MJPG format — falling back to opencv")
+                    return False
+
+                actual_w = fmt.fmt.pix.width
+                actual_h = fmt.fmt.pix.height
+                if (actual_w, actual_h) != (w, h):
+                    logging.warning(
+                        "v4l2 passthrough: resolution negotiated to %dx%d (requested %dx%d)",
+                        actual_w, actual_h, w, h,
+                    )
+                    self.resolution = (actual_w, actual_h)
+
+                # ── Allocate mmap buffers ──────────────────────────────────────
+                req = _v4l2.v4l2_requestbuffers()
+                req.count  = NUM_BUFS
+                req.type   = _v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE
+                req.memory = _v4l2.V4L2_MEMORY_MMAP
+                fcntl.ioctl(fd, _v4l2.VIDIOC_REQBUFS, req)
+
+                for i in range(req.count):
+                    qbuf = _v4l2.v4l2_buffer()
+                    qbuf.type   = _v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE
+                    qbuf.memory = _v4l2.V4L2_MEMORY_MMAP
+                    qbuf.index  = i
+                    fcntl.ioctl(fd, _v4l2.VIDIOC_QUERYBUF, qbuf)
+                    m = mmap.mmap(
+                        fd, qbuf.length,
+                        flags=mmap.MAP_SHARED,
+                        prot=mmap.PROT_READ,
+                        offset=qbuf.m.offset,
+                    )
+                    mmaps.append(m)
+                    fcntl.ioctl(fd, _v4l2.VIDIOC_QBUF, qbuf)
+
+                # ── Start streaming ────────────────────────────────────────────
+                buf_type = ctypes.c_uint32(_v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE)
+                fcntl.ioctl(fd, _v4l2.VIDIOC_STREAMON, buf_type)
+
+                backoff = 1
+                print(
+                    f"Camera capture: v4l2 passthrough (mmap), {V4L2_DEVICE}, "
+                    f"{actual_w}x{actual_h} @ {FPS}fps MJPEG",
+                    flush=True,
+                )
+
+                # ── Capture loop ───────────────────────────────────────────────
+                buf = _v4l2.v4l2_buffer()
+                buf.type   = _v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE
+                buf.memory = _v4l2.V4L2_MEMORY_MMAP
+
+                select_timeouts = 0
+                while not self._stop.is_set() and not self._restart.is_set():
+                    ready, _, _ = select.select([fd], [], [], 1.0)
+                    if not ready:
+                        select_timeouts += 1
+                        if select_timeouts >= SELECT_TIMEOUT_LIMIT:
+                            raise OSError(
+                                f"no frames for {select_timeouts}s — camera firmware hung"
+                            )
+                        continue
+                    select_timeouts = 0
+                    fcntl.ioctl(fd, _v4l2.VIDIOC_DQBUF, buf)
+                    # Capture bytesused and index NOW — VIDIOC_QBUF zeroes bytesused.
+                    bytesused = buf.bytesused
+                    frame     = bytes(mmaps[buf.index][:bytesused])
+                    fcntl.ioctl(fd, _v4l2.VIDIOC_QBUF, buf)
+
+                    if bytesused < 4 or frame[:2] != b'\xff\xd8' or frame[-2:] != b'\xff\xd9':
+                        invalid_run += 1
+                        if invalid_run % LOG_EVERY == 1:
+                            logging.warning(
+                                "v4l2 passthrough: %d invalid MJPEG frame(s) — dropped", invalid_run,
+                            )
+                        continue
+                    invalid_run = 0
+                    self.output.write(frame)
+
+            except OSError as e:
+                logging.error("v4l2 passthrough error: %s", e)
+                self._usb_reset_camera()
+            finally:
+                if fd is not None:
+                    try:
+                        fcntl.ioctl(fd, _v4l2.VIDIOC_STREAMOFF,
+                                    ctypes.c_uint32(_v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE))
+                    except OSError:
+                        pass
+                    for m in mmaps:
+                        try:
+                            m.close()
+                        except Exception:
+                            pass
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+
+            if not self._stop.is_set() and not self._restart.is_set():
+                if self._stop.wait(backoff):
+                    break
+                backoff = min(backoff * 2, 30)
+
+        return True
+
     # ── V4L2 / OpenCV backend ──────────────────────────────────────────────────
 
     def _open_v4l2(self):
@@ -301,6 +530,10 @@ class CameraManager:
     def _capture_loop(self):
         if CAM_BACKEND == "picamera2":
             self._loop_picamera2()
+        elif V4L2_MODE == "passthrough" and _v4l2 is not None:
+            if not self._loop_v4l2_passthrough():
+                print("Camera: MJPG passthrough unavailable, falling back to opencv", flush=True)
+                self._loop_v4l2()
         else:
             self._loop_v4l2()
 
@@ -318,7 +551,13 @@ class CameraManager:
     # ── Live-stream frame (reduced quality for bandwidth) ─────────────────────
 
     def get_stream_frame(self):
-        """Return the current frame re-encoded at STREAM_JPEG_QUALITY.
+        """Return the current frame, optionally re-encoded at STREAM_JPEG_QUALITY.
+
+        In V4L2 passthrough mode the frame is raw camera MJPEG; decoding and
+        re-encoding it here would defeat the passthrough and add ~75ms of latency
+        per request, so we skip the quality reduction and serve the native MJPEG.
+        In OpenCV mode (and picamera2) the encode already happens in the capture
+        loop, so re-encoding at a lower quality is cheap enough to be worthwhile.
 
         Photos, video, and timelapse all read self.output.frame directly and
         are unaffected — they always get the full JPEG_QUALITY (85) buffer.
@@ -326,7 +565,7 @@ class CameraManager:
         with self.output.condition:
             self.output.condition.wait(timeout=2)
             frame = self.output.frame
-        if not frame or STREAM_JPEG_QUALITY >= JPEG_QUALITY:
+        if not frame or STREAM_JPEG_QUALITY >= JPEG_QUALITY or V4L2_MODE == "passthrough":
             return frame
         arr = np.frombuffer(frame, dtype=np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
