@@ -9,6 +9,7 @@ let   tlNextFrameAt_ = null;   // estimated epoch ms of next frame
 let   _tlPollMs      = 1000;   // adaptive: 1 s (fast interval) → 30 s (slow interval)
 let   statsTimer   = null;
 let   _tickTimer   = null;
+let   _lastTickTime = 0;
 let   streamOnline = false;
 let   currentRes   = '1920x1080';
 let   recording    = false;
@@ -401,10 +402,11 @@ document.addEventListener('click', function(e) {
 });
 
 // ── Stream ─────────────────────────────────────────────────────────────────────
-const _FRAME_MS = Math.round(1000 / 24);
+const _FRAME_MS = Math.round(1000 / 30);
 
 function _tick() {
-  document.getElementById('stream-img').src = '/api/frame?t=' + Date.now();
+  _lastTickTime = Date.now();
+  document.getElementById('stream-img').src = '/api/frame?t=' + _lastTickTime;
 }
 
 function onStreamLoad() {
@@ -437,6 +439,14 @@ window.addEventListener('pageshow', function (e) {
 });
 
 _tick(); // start on page load
+// Watchdog: if onload/onerror hasn't fired within 4× the expected interval, force
+// the next tick so a hung network request can't freeze the stream.
+setInterval(function () {
+  if (streamOnline && Date.now() - _lastTickTime > _FRAME_MS * 4) {
+    clearTimeout(_tickTimer);
+    _tick();
+  }
+}, _FRAME_MS * 2);
 
 function setStatus(online) {
   document.getElementById('status-dot').className  = 'dot' + (online ? ' online' : '');
@@ -1162,6 +1172,7 @@ const CTRL_DEFAULTS = {
   exposure_time: 0, analogue_gain: 0.0,
   awb_mode: 'auto', awb_kelvin: 5600,
   sharpness: 1.0, contrast: 1.0, noise_reduction: 'off',
+  hdr_mode: 0, ae_metering_mode: 0, ae_constraint_mode: 0,
   brightness: 0, saturation: 0, tint: 0, warmth: 40,
   hflip: false, vflip: false,
   film_filter: 'none',
@@ -1313,6 +1324,16 @@ function setCtrlNR(el) {
   scheduleCtrl();
 }
 
+function setCtrlHDR(el) {
+  document.querySelectorAll('#ctrl-hdr-btns .res-opt').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  const on = parseInt(el.dataset.hdr, 10) !== 0;
+  _ctrl.hdr_mode           = on ? 2 : 0;
+  _ctrl.ae_metering_mode   = on ? 2 : 0;
+  _ctrl.ae_constraint_mode = on ? 2 : 0;
+  scheduleCtrl();
+}
+
 function toggleCtrlFlip(key, btn) {
   _ctrl[key] = !_ctrl[key];
   btn.classList.toggle('active', _ctrl[key]);
@@ -1388,6 +1409,9 @@ function syncCtrlUI() {
   // NR chips
   document.querySelectorAll('#ctrl-nr-btns .res-opt').forEach(b =>
     b.classList.toggle('active', b.dataset.nr === _ctrl.noise_reduction));
+  // HDR toggle
+  document.querySelectorAll('#ctrl-hdr-btns .res-opt').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.hdr, 10) === _ctrl.hdr_mode));
   // Flip buttons (feed overlay)
   document.getElementById('feed-hflip-btn').classList.toggle('active', _ctrl.hflip);
   document.getElementById('feed-vflip-btn').classList.toggle('active', _ctrl.vflip);

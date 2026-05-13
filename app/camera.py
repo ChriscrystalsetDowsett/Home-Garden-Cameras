@@ -6,17 +6,21 @@ import cv2
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
-from .config import SNAPSHOT_DIR, RESOLUTIONS, CAM_CTRL_DEFAULTS, DEFAULT_RESOLUTION, CAM_BACKEND, STREAM_JPEG_QUALITY, V4L2_MODE
+from .config import (SNAPSHOT_DIR, RESOLUTIONS, CAM_CTRL_DEFAULTS,
+                     DEFAULT_RESOLUTION, CAM_BACKEND, V4L2_MODE,
+                     STREAM_JPEG_QUALITY, STREAM_BITRATE)
 from .film import FILM_FILTERS
 from .postprocess import postprocess_jpeg
 
-FPS          = 30
-JPEG_QUALITY = 85
+FPS          = 24
+JPEG_QUALITY = 85   # effects re-encode quality; v4l2 capture quality
 V4L2_DEVICE  = "/dev/video0"
 
-# Optional picamera2 import — only needed on CSI camera Pis.
+# Optional picamera2 imports — only needed on CSI camera Pis.
 if CAM_BACKEND == "picamera2":
     from picamera2 import Picamera2
+    from picamera2.encoders import JpegEncoder
+    from picamera2.outputs import FileOutput
 
 # Optional v4l2 ctypes bindings — needed only for the MJPEG passthrough path.
 if CAM_BACKEND == "v4l2":
@@ -127,6 +131,9 @@ def _apply_filter(img, name):
     return img
 
 
+# warmth at this value → _apply_ocv skipped (no change from startup default)
+_WARMTH_NEUTRAL = int(CAM_CTRL_DEFAULTS["warmth"])
+
 # ── Stream output (shared by both backends) ────────────────────────────────────
 class StreamOutput(io.BufferedIOBase):
     def __init__(self):
@@ -142,7 +149,8 @@ class StreamOutput(io.BufferedIOBase):
         with cam_ctrl_lock:
             s = {k: cam_ctrl[k] for k in ("tint", "warmth", "hflip", "vflip", "film_filter", "film_strength")}
         displayed = _apply_ocv(buf, s) if (
-            s["tint"] or s["warmth"] or s["hflip"] or s["vflip"] or s["film_filter"] != "none"
+            s["tint"] or s["warmth"] != _WARMTH_NEUTRAL or
+            s["hflip"] or s["vflip"] or s["film_filter"] != "none"
         ) else buf
 
         with self.condition:
@@ -159,6 +167,7 @@ class StreamOutput(io.BufferedIOBase):
                 self.fps        = round(self._fps_count / dt, 1)
                 self._fps_count = 0
                 self._fps_ts    = now
+        return len(buf)
 
 
 # ── Camera manager ─────────────────────────────────────────────────────────────
@@ -175,6 +184,13 @@ class CameraManager:
         self._handle    = None
         # Stream enable/disable — hardware keeps running, frames just aren't served
         self.enabled    = True
+        # Still-capture handshake: Flask thread sets _still_request, loop thread
+        # executes the capture and sets _still_done.  _still_lock prevents two
+        # concurrent callers from racing over _still_img.
+        self._still_lock    = threading.Lock()
+        self._still_request = threading.Event()
+        self._still_done    = threading.Event()
+        self._still_img     = None
         threading.Thread(target=self._capture_loop, daemon=True, name="capture").start()
 
     def set_enabled(self, value: bool) -> None:
@@ -188,15 +204,61 @@ class CameraManager:
             picam2 = Picamera2()
             self.model = picam2.camera_properties.get("Model", "Unknown").upper()
             config = picam2.create_video_configuration(
-                main={"format": "RGB888", "size": (w, h)},
+                main={"size": (w, h)},
+                encode="main",
                 controls={"FrameRate": float(FPS)},
-                buffer_count=2,
+                buffer_count=4,
             )
             picam2.configure(config)
-            picam2.start()
             return picam2
         except Exception:
             return None
+
+    def _video_config(self, picam2):
+        """Build the standard video configuration for the current resolution."""
+        w, h = self.resolution
+        return picam2.create_video_configuration(
+            main={"size": (w, h)},
+            encode="main",
+            controls={"FrameRate": float(FPS)},
+            buffer_count=4,
+        )
+
+    def _do_still_capture(self, picam2, encoder):
+        """Stop recording, grab a full-sensor-resolution still, restart recording.
+
+        Called exclusively from the capture loop thread so picamera2 is always
+        touched from a single thread.  Signals _still_done when complete
+        (with _still_img set to a PIL Image on success, or None on failure).
+        """
+        img = None
+        try:
+            picam2.stop_recording()
+            still_cfg = picam2.create_still_configuration(
+                main={"size": picam2.sensor_resolution},
+            )
+            picam2.configure(still_cfg)
+            picam2.start()
+            # Brief settle: AE/AWB inherit state from the preceding video mode
+            # but the sensor mode change warrants a couple of frames to stabilise.
+            time.sleep(0.3)
+            img = picam2.capture_image("main")
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            picam2.stop()
+        except Exception:
+            img = None
+        finally:
+            # Always restore video recording regardless of capture outcome.
+            try:
+                picam2.configure(self._video_config(picam2))
+                picam2.start_recording(encoder, FileOutput(self.output))
+                with cam_ctrl_lock:
+                    self._isp_picamera2(picam2, dict(cam_ctrl))
+            except Exception:
+                pass
+            self._still_img = img
+            self._still_done.set()
 
     def _loop_picamera2(self):
         backoff = 1
@@ -209,29 +271,28 @@ class CameraManager:
                 backoff = min(backoff * 2, 30)
                 continue
             backoff = 1
+            encoder = JpegEncoder(q=STREAM_JPEG_QUALITY, num_threads=2)
             with self.lock:
                 self._handle = picam2
             with cam_ctrl_lock:
                 self.apply_isp_controls(dict(cam_ctrl))
-            failures = 0
-            while not self._stop.is_set() and not self._restart.is_set():
-                try:
-                    frame = picam2.capture_array("main")
-                except Exception:
-                    failures += 1
-                    if failures >= 5:
-                        break
-                    time.sleep(0.05)
-                    continue
-                failures = 0
-                ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
-                if ok:
-                    self.output.write(buf.tobytes())
             try:
-                picam2.stop()
-                picam2.close()
+                picam2.start_recording(encoder, FileOutput(self.output))
+                while not self._stop.is_set() and not self._restart.is_set():
+                    if self._still_request.wait(timeout=0.1):
+                        self._still_request.clear()
+                        self._do_still_capture(picam2, encoder)
             except Exception:
                 pass
+            finally:
+                try:
+                    picam2.stop_recording()
+                except Exception:
+                    pass
+                try:
+                    picam2.close()
+                except Exception:
+                    pass
             with self.lock:
                 if self._handle is picam2:
                     self._handle = None
@@ -550,24 +611,15 @@ class CameraManager:
         self._restart.set()
         return True
 
-    # ── Live-stream frame (reduced quality for bandwidth) ─────────────────────
+    # ── Live-stream frame ──────────────────────────────────────────────────────
 
     def get_stream_frame(self):
-        """Return the current frame, optionally re-encoded at STREAM_JPEG_QUALITY.
-
-        In V4L2 passthrough mode the frame is raw camera MJPEG; decoding and
-        re-encoding it here would defeat the passthrough and add ~75ms of latency
-        per request, so we skip the quality reduction and serve the native MJPEG.
-        In OpenCV mode (and picamera2) the encode already happens in the capture
-        loop, so re-encoding at a lower quality is cheap enough to be worthwhile.
-
-        Photos, video, and timelapse all read self.output.frame directly and
-        are unaffected — they always get the full JPEG_QUALITY (85) buffer.
-        """
         with self.output.condition:
             self.output.condition.wait(timeout=2)
             frame = self.output.frame
-        if not frame or STREAM_JPEG_QUALITY >= JPEG_QUALITY or V4L2_MODE == "passthrough":
+        if not frame:
+            return frame
+        if CAM_BACKEND == "picamera2" or STREAM_JPEG_QUALITY >= JPEG_QUALITY or V4L2_MODE == "passthrough":
             return frame
         arr = np.frombuffer(frame, dtype=np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -584,16 +636,37 @@ class CameraManager:
         exif_dt = now.strftime("%Y:%m:%d %H:%M:%S")
         filename = f"{prefix}_{ts}.jpg"
         path = SNAPSHOT_DIR / filename
-        with self.output.condition:
-            self.output.condition.wait(timeout=3)
-            frame = self.output.frame
-        if not frame:
-            return None
-        img = Image.open(io.BytesIO(frame))
+
+        if CAM_BACKEND == "picamera2":
+            # Serialise concurrent snapshot requests; the loop thread does the
+            # actual capture so picamera2 is only ever touched from one thread.
+            with self._still_lock:
+                with self.lock:
+                    if self._handle is None:
+                        return None
+                self._still_img = None
+                self._still_done.clear()
+                self._still_request.set()
+                if not self._still_done.wait(timeout=15):
+                    return None
+                img = self._still_img
+            if img is None:
+                return None
+            # Full-sensor still: always save at maximum JPEG quality.
+            save_quality = 95
+        else:
+            with self.output.condition:
+                self.output.condition.wait(timeout=3)
+                frame = self.output.frame
+            if not frame:
+                return None
+            img = Image.open(io.BytesIO(frame))
+            save_quality = quality
+
         if filter_name and filter_name != "none":
             img = _apply_filter(img, filter_name)
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=quality)
+        img.save(buf, format="JPEG", quality=save_quality)
         path.write_bytes(buf.getvalue())
 
         with cam_ctrl_lock:
@@ -612,11 +685,11 @@ class CameraManager:
 
         if prefix == "tl":
             threading.Thread(
-                target=postprocess_jpeg, args=(path, quality),
+                target=postprocess_jpeg, args=(path, save_quality),
                 kwargs={"fast": True, "metadata": meta}, daemon=True
             ).start()
         else:
-            postprocess_jpeg(path, quality, metadata=meta)
+            postprocess_jpeg(path, save_quality, metadata=meta)
         return filename
 
     # ── ISP controls ───────────────────────────────────────────────────────────
@@ -659,6 +732,9 @@ class CameraManager:
             _af_range = {"normal": 0, "macro": 1, "full": 2}
             controls["AfMode"]  = _af_mode.get( c.get("af_mode",  "continuous"), 2)
             controls["AfRange"] = _af_range.get(c.get("af_range", "normal"),     0)
+            controls["AeMeteringMode"]   = int(c.get("ae_metering_mode",   2))
+            controls["AeConstraintMode"] = int(c.get("ae_constraint_mode", 2))
+            controls["HdrMode"]          = int(c.get("hdr_mode",           2))
             picam2.set_controls(controls)
         except Exception:
             pass
@@ -775,7 +851,10 @@ class CameraManager:
             return
         try:
             if CAM_BACKEND == "picamera2":
-                handle.stop()
+                try:
+                    handle.stop_recording()
+                except Exception:
+                    pass
                 handle.close()
             else:
                 handle.release()

@@ -30,9 +30,12 @@ DEFAULT_RESOLUTION = _cfg["camera"]["default_resolution"]
 if DEFAULT_RESOLUTION not in RESOLUTIONS:
     DEFAULT_RESOLUTION = "1280x720"
 
-# Quality for the live stream served by /api/frame.  Photos, video, and
-# timelapse always use the full JPEG_QUALITY (85) stored in the frame buffer.
+# Quality for the live stream served by /api/frame (v4l2 backend only).
+# picamera2 backend uses STREAM_BITRATE instead — bitrate controls quality there.
 STREAM_JPEG_QUALITY = max(1, min(95, int(_cfg["camera"].get("stream_quality", 60))))
+
+# Bitrate for the MJPEGEncoder live feed (picamera2 backend only).
+STREAM_BITRATE = max(1_000_000, int(_cfg["camera"].get("stream_bitrate", 10_000_000)))
 
 CAM_BACKEND = _cfg["camera"].get("backend", "picamera2")   # "picamera2" | "v4l2"
 V4L2_MODE   = _cfg["camera"].get("v4l2_mode", "passthrough")  # "passthrough" | "opencv"
@@ -82,6 +85,10 @@ CAM_CTRL_DEFAULTS = {
     # Autofocus (picamera2 / IMX708 only)
     "af_mode":  "continuous",   # "continuous" | "auto" | "manual"
     "af_range": "normal",       # "normal" (30cm–∞) | "macro" (3–30cm) | "full" (3cm–∞)
+    # Dynamic range — picamera2 / IMX708 only
+    "ae_metering_mode":   0,    # 0=CentreWeighted 1=Spot 2=Matrix — full scene metering
+    "ae_constraint_mode": 0,    # 0=Normal 1=Highlight 2=Shadows — protect dark areas
+    "hdr_mode":           0,    # 0=Off 1=MultiExposure 2=SingleExposure — no fps hit
     # Post-capture: OpenCV per-frame
     "tint":        0,           # −100 (green) … +100 (magenta)
     "warmth":      0,          # −100 (cool/blue) … +100 (warm/orange); 0 required for passthrough to skip decode/encode

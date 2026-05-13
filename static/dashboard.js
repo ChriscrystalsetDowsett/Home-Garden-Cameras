@@ -57,7 +57,6 @@ function onTileError(img) {
 }
 
 function _startDrawerStream() {
-  clearTimeout(_drawerTimer);
   if (activeIdx === null) return;
   document.getElementById('drawer-stream-img').src = _drawerFrameUrl();
 }
