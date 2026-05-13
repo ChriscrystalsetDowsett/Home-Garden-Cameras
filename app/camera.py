@@ -751,12 +751,14 @@ class CameraManager:
             sv    = int(sharp * 128) if sharp <= 1.0 else int(128 + (sharp - 1.0) / 3.0 * 127)
             ctr   = float(c.get("contrast", 1.0))
             cv    = int(ctr * 128) if ctr <= 1.0 else int(128 + (ctr - 1.0) / 3.0 * 127)
+            bc    = max(0, min(1, int(c.get("backlight_compensation", 0))))
             subprocess.run(
                 ["v4l2-ctl", "-d", V4L2_DEVICE,
                  f"--set-ctrl=brightness={max(0, min(255, 128 + b * 127 // 100))},"
                  f"saturation={max(0, min(255, 128 + sat * 127 // 100))},"
                  f"sharpness={max(0, min(255, sv))},"
-                 f"contrast={max(0, min(255, cv))}"],
+                 f"contrast={max(0, min(255, cv))},"
+                 f"backlight_compensation={bc}"],
                 capture_output=True, check=False,
             )
         except Exception:

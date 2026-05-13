@@ -77,6 +77,7 @@ CAM_CTRL_DEFAULTS = {
     "saturation": int(_cfg["camera"].get("saturation",    0)),  # −100…+100 → V4L2 0–255 (neutral 128)
     "sharpness": float(_cfg["camera"].get("sharpness",  1.5)),  # 0–4 → V4L2 0–255 (neutral 128)
     "contrast":  float(_cfg["camera"].get("contrast",   1.0)),  # 0–4 → V4L2 0–255 (neutral 128)
+    "backlight_compensation": int(_cfg["camera"].get("backlight_compensation", 0)),  # 0=off 1=on
     "noise_reduction": "off",   # kept for API compat; not applied on C930e/V4L2
     # Autofocus (picamera2 / IMX708 only)
     "af_mode":  "continuous",   # "continuous" | "auto" | "manual"

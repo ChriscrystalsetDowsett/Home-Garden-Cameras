@@ -112,7 +112,7 @@
       <button class="fs-quick-btn" id="fsq-tl-btn" onclick="startStopTL()" title="Timelapse">
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 15.5"/></svg>
       </button>
-      <button class="fs-quick-btn fs-quick-mic" id="fsq-mic-btn" onclick="toggleStreamAudio()" title="Toggle Audio" style="display:none">
+      <button class="fs-quick-btn fs-quick-mic" id="fsq-mic-btn" onclick="toggleStreamAudio()" title="Toggle Audio"{% if not audio_available %} style="display:none"{% endif %}>
         <svg id="fsq-mic-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
       </button>
     </div>
@@ -283,6 +283,6 @@
 <!-- ── Toast ── -->
 <div class="toast" id="toast"></div>
 
-<script src="/static/index.js?v=6"></script>
+<script src="/static/index.js?v=7"></script>
 </body>
 </html>

@@ -135,11 +135,13 @@
              oninput="onCtrlSlider('contrast', this, 'ctrl-val-contrast', v => v.toFixed(2))">
     </div>
 
-    <div class="section-label" style="margin-top:14px">Noise Reduction</div>
-    <div class="res-buttons" id="ctrl-nr-btns">
-      <button class="res-opt"        data-nr="off"          onclick="setCtrlNR(this)">Off</button>
-      <button class="res-opt active" data-nr="fast"         onclick="setCtrlNR(this)">Fast</button>
-      <button class="res-opt"        data-nr="high_quality" onclick="setCtrlNR(this)">High Quality</button>
+    <div id="ctrl-nr-section">
+      <div class="section-label" style="margin-top:14px">Noise Reduction</div>
+      <div class="res-buttons" id="ctrl-nr-btns">
+        <button class="res-opt active" data-nr="off"          onclick="setCtrlNR(this)">Off</button>
+        <button class="res-opt"        data-nr="fast"         onclick="setCtrlNR(this)">Fast</button>
+        <button class="res-opt"        data-nr="high_quality" onclick="setCtrlNR(this)">High Quality</button>
+      </div>
     </div>
 
     <hr class="tl-divider">

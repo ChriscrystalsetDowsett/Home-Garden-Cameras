@@ -359,6 +359,10 @@ async function loadInfo() {
       const micBtn = document.getElementById('fsq-mic-btn');
       if (micBtn) micBtn.style.display = '';
     }
+    if (d.cam_backend === 'v4l2') {
+      const nrSection = document.getElementById('ctrl-nr-section');
+      if (nrSection) nrSection.style.display = 'none';
+    }
   } catch (_) {}
 }
 
@@ -1157,7 +1161,7 @@ function onFilmStrength(el) {
 const CTRL_DEFAULTS = {
   exposure_time: 0, analogue_gain: 0.0,
   awb_mode: 'auto', awb_kelvin: 5600,
-  sharpness: 1.0, contrast: 1.0, noise_reduction: 'fast',
+  sharpness: 1.0, contrast: 1.0, noise_reduction: 'off',
   brightness: 0, saturation: 0, tint: 0, warmth: 40,
   hflip: false, vflip: false,
   film_filter: 'none',

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from flask import Flask, Response, render_template, make_response, jsonify, request, send_from_directory, after_this_request
 
-from .config import SNAPSHOT_DIR, VIDEOS_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY
+from .config import SNAPSHOT_DIR, VIDEOS_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY, CAM_BACKEND
 from .camera import camera, cam_ctrl, cam_ctrl_lock
 from .timelapse import timelapse, get_compile_status
 from .recorder import video_recorder, AUDIO_AVAILABLE, audio_streamer
@@ -38,7 +38,9 @@ def _cors(response):
 
 @app.route("/")
 def index():
-    resp = make_response(render_template("index.html"))
+    resp = make_response(render_template("index.html",
+                                         audio_available=AUDIO_AVAILABLE,
+                                         cam_backend=CAM_BACKEND))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return resp
 
@@ -304,4 +306,5 @@ def stats():
 def pi_info():
     info = get_pi_info()
     info["audio_available"] = AUDIO_AVAILABLE
+    info["cam_backend"]     = CAM_BACKEND
     return jsonify(info)
