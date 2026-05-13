@@ -71,12 +71,12 @@ CAM_CTRL_DEFAULTS = {
     # Pre-capture: V4L2 hardware controls (C930e)
     "exposure_time":   0,       # 0 = auto (Aperture Priority); µs otherwise (V4L2 units ×100µs)
     "analogue_gain":   0.0,     # 0 = auto; otherwise maps to V4L2 gain 0–255
-    "awb_mode":       "auto",   # "auto" | "manual"
-    "awb_kelvin":      5000,    # colour temperature K (2000–7500), active when awb_mode=manual
+    "awb_mode":       _cfg["camera"].get("awb_mode",   "auto"),  # "auto" | "manual"
+    "awb_kelvin": int(_cfg["camera"].get("awb_kelvin",  5000)),  # K (2000–7500), active when awb_mode=manual
     "brightness":      0,       # −100…+100 → V4L2 0–255 (neutral 128)
-    "saturation":      40,      # −100…+100 → V4L2 0–255 (neutral 128)
-    "sharpness":       1.5,     # 0–4 → V4L2 0–255 (neutral 128)
-    "contrast":        1.0,     # 0–4 → V4L2 0–255 (neutral 128)
+    "saturation": int(_cfg["camera"].get("saturation",    0)),  # −100…+100 → V4L2 0–255 (neutral 128)
+    "sharpness": float(_cfg["camera"].get("sharpness",  1.5)),  # 0–4 → V4L2 0–255 (neutral 128)
+    "contrast":  float(_cfg["camera"].get("contrast",   1.0)),  # 0–4 → V4L2 0–255 (neutral 128)
     "noise_reduction": "off",   # kept for API compat; not applied on C930e/V4L2
     # Autofocus (picamera2 / IMX708 only)
     "af_mode":  "continuous",   # "continuous" | "auto" | "manual"
