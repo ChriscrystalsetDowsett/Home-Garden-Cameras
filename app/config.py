@@ -72,7 +72,7 @@ NOISE_MODES = {"off": 0, "fast": 1, "high_quality": 2}
 # hflip/vflip seed from settings.yaml so the Pi can be mounted any way you like.
 CAM_CTRL_DEFAULTS = {
     # Pre-capture: V4L2 hardware controls (C930e)
-    "exposure_time":   0,       # 0 = auto (Aperture Priority); µs otherwise (V4L2 units ×100µs)
+    "exposure_time":  int(_cfg["camera"].get("exposure_time",  0)),  # 0 = auto; µs otherwise
     "analogue_gain":   0.0,     # 0 = auto; otherwise maps to V4L2 gain 0–255
     "awb_mode":       _cfg["camera"].get("awb_mode",   "auto"),  # "auto" | "manual"
     "awb_kelvin": int(_cfg["camera"].get("awb_kelvin",  5000)),  # K (2000–7500), active when awb_mode=manual
@@ -90,8 +90,8 @@ CAM_CTRL_DEFAULTS = {
     "ae_constraint_mode": 0,    # 0=Normal 1=Highlight 2=Shadows — protect dark areas
     "hdr_mode":           0,    # 0=Off 1=MultiExposure 2=SingleExposure — no fps hit
     # Post-capture: OpenCV per-frame
-    "tint":        0,           # −100 (green) … +100 (magenta)
-    "warmth":      0,          # −100 (cool/blue) … +100 (warm/orange); 0 required for passthrough to skip decode/encode
+    "tint":        int(_cfg["camera"].get("tint",    0)),   # −100 (green) … +100 (magenta)
+    "warmth":      int(_cfg["camera"].get("warmth",  0)),   # −100 (cool/blue) … +100 (warm/orange)
     "hflip":       bool(_cfg["camera"].get("hflip", False)),
     "vflip":       bool(_cfg["camera"].get("vflip", False)),
     "film_filter": "none",

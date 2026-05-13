@@ -46,6 +46,7 @@ const TL_DUR_LBLS      = ['5m','15m','30m','1h','2h','4h','8h','24h','\u221e'];
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   loadInfo();
+  loadCtrlDefaults();
   startStats();
   loadGallery();
   loadVideos();
@@ -1167,17 +1168,20 @@ function onFilmStrength(el) {
 
 // ── Camera controls panel ──────────────────────────────────────────────────────
 
-// Mirrors _cam_ctrl_defaults on the server
+// Fallback defaults (used before server defaults arrive)
 const CTRL_DEFAULTS = {
   exposure_time: 0, analogue_gain: 0.0,
   awb_mode: 'auto', awb_kelvin: 5600,
   sharpness: 1.0, contrast: 1.0, noise_reduction: 'off',
   hdr_mode: 0, ae_metering_mode: 0, ae_constraint_mode: 0,
   brightness: 0, saturation: 0, tint: 0, warmth: 40,
+  backlight_compensation: 0,
   hflip: false, vflip: false,
   film_filter: 'none',
   film_strength: 100,
 };
+// Loaded from server on startup; used by Reset button
+let _serverDefaults = Object.assign({}, CTRL_DEFAULTS);
 let _ctrl = Object.assign({}, CTRL_DEFAULTS);
 let _ctrlDebounce = null;
 
@@ -1355,8 +1359,18 @@ async function sendCtrl() {
   } catch (_) {}
 }
 
+async function loadCtrlDefaults() {
+  try {
+    const r = await fetch('/api/camera_controls/defaults');
+    const d = await r.json();
+    Object.assign(_serverDefaults, d);
+    Object.assign(_ctrl, d);
+    syncCtrlUI();
+  } catch (_) {}
+}
+
 async function resetCtrlDefaults() {
-  Object.assign(_ctrl, CTRL_DEFAULTS);
+  Object.assign(_ctrl, _serverDefaults);
   syncCtrlUI();
   await sendCtrl();
   toast('Controls reset to defaults', 'success');
