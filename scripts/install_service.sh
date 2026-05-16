@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install_service.sh — Install garden-monitor as a systemd service.
+# install_service.sh — Install home-garden-cameras as a systemd service.
 #
 # Substitutes {{USER}}, {{WORKING_DIR}}, and {{XDG_RUNTIME_DIR}} from the
 # template and writes the unit file to /etc/systemd/system/.
@@ -14,8 +14,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-TEMPLATE="$SCRIPT_DIR/garden-monitor.service.template"
-UNIT_FILE="/etc/systemd/system/garden-monitor.service"
+TEMPLATE="$SCRIPT_DIR/home-garden-cameras.service.template"
+UNIT_FILE="/etc/systemd/system/home-garden-cameras.service"
 
 if [ ! -f "$TEMPLATE" ]; then
     echo "ERROR: template not found at $TEMPLATE" >&2
@@ -31,7 +31,7 @@ SUBST_USER="$(whoami)"
 SUBST_WORKING_DIR="$PROJECT_DIR"
 SUBST_XDG="$(echo /run/user/$(id -u))"
 
-echo "==> Installing garden-monitor.service"
+echo "==> Installing home-garden-cameras.service"
 echo "    User          : $SUBST_USER"
 echo "    WorkingDir    : $SUBST_WORKING_DIR"
 echo "    XDG_RUNTIME_DIR: $SUBST_XDG"
@@ -43,6 +43,6 @@ sed \
     "$TEMPLATE" | sudo tee "$UNIT_FILE" > /dev/null
 
 sudo systemctl daemon-reload
-sudo systemctl enable garden-monitor
+sudo systemctl enable home-garden-cameras
 
-echo "==> Done. Start with: sudo systemctl start garden-monitor"
+echo "==> Done. Start with: sudo systemctl start home-garden-cameras"

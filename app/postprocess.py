@@ -85,7 +85,7 @@ def _build_exif_bytes(metadata: dict, width: int, height: int):
         zeroth = {
             _piexif.ImageIFD.Make:           make,
             _piexif.ImageIFD.Model:          model,
-            _piexif.ImageIFD.Software:       b"Garden Monitor",
+            _piexif.ImageIFD.Software:       b"Home Garden Cameras",
             _piexif.ImageIFD.Orientation:    orientation,
             _piexif.ImageIFD.XResolution:    (72, 1),
             _piexif.ImageIFD.YResolution:    (72, 1),

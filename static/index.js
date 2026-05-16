@@ -582,7 +582,7 @@ async function loadVideos() {
     files.forEach(f => {
       const a = document.createElement('a');
       a.className = 'gallery-item video-item';
-      a.href = '/videos/' + f.filename;
+      a.href = 'https://media.chrisdowsett.com/media/' + PI_NAME + '/videos/' + f.filename;
       a.target = '_blank';
       a.title = f.filename;
 
@@ -653,11 +653,12 @@ async function loadGallery() {
       files.forEach(f => {
         const a = document.createElement('a');
         a.className = 'gallery-item';
-        a.href = '/snapshots/' + f.filename;
+        a.href = 'https://media.chrisdowsett.com/media/' + PI_NAME + '/photos/' + f.filename;
         a.target = '_blank';
         a.title = f.filename;
         const img = document.createElement('img');
-        img.src = '/snapshots/' + f.filename;
+        img.src = '/snapshots/' + f.filename.replace('.jpg', '.thumb.jpg');
+        img.onerror = () => { img.src = '/snapshots/' + f.filename; };
         img.loading = 'lazy';
         a.appendChild(img);
 

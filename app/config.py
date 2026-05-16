@@ -2,7 +2,7 @@
 from pathlib import Path
 import yaml
 
-PROJECT_ROOT = Path(__file__).parent.parent   # garden-monitor/
+PROJECT_ROOT = Path(__file__).parent.parent   # home-garden-cameras/
 
 # ── Load settings ─────────────────────────────────────────────────────────────
 _cfg_path = PROJECT_ROOT / "config" / "settings.yaml"
@@ -12,6 +12,7 @@ with open(_cfg_path) as _f:
 # ── Server ────────────────────────────────────────────────────────────────────
 SERVER_HOST = _cfg["server"]["host"]
 SERVER_PORT = int(_cfg["server"]["port"])
+PI_NAME     = _cfg["server"].get("pi_name", "unknown")
 
 # ── Data paths ────────────────────────────────────────────────────────────────
 SNAPSHOT_DIR = (PROJECT_ROOT / _cfg["paths"]["photos"]).resolve()

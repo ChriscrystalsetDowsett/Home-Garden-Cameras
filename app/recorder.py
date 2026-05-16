@@ -117,8 +117,8 @@ def _convert_recording(src, dst, fps, crf=23, audio_src=None, start_ts=None):
         cmd += [
             '-metadata', f'creation_time={iso_dt}',
             '-metadata', f'title={dst.stem}',
-            '-metadata', 'comment=Garden Monitor Video',
-            '-metadata', 'encoder=Garden Monitor',
+            '-metadata', 'comment=Home Garden Cameras Video',
+            '-metadata', 'encoder=Home Garden Cameras',
         ]
     cmd += [str(dst)]
     result = subprocess.run(cmd, capture_output=True, timeout=300)

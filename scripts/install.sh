@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# install.sh — Bootstrap Garden Monitor on a fresh Raspberry Pi OS Lite (Bookworm)
+# install.sh — Bootstrap Home Garden Cameras on a fresh Raspberry Pi OS Lite (Bookworm)
 # Run as the pi user (NOT root).  It will sudo when needed.
 #
 # Usage:
-#   cd ~/garden-monitor
+#   cd ~/home-garden-cameras
 #   bash scripts/install.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-echo "==> Garden Monitor install started"
+echo "==> Home Garden Cameras install started"
 echo "    Project root: $PROJECT_DIR"
 
 # ── 1. System packages ─────────────────────────────────────────────────────────
@@ -52,13 +52,13 @@ fi
 chmod +x "$SCRIPT_DIR"/*.sh
 
 # ── 6. Optional: install as a systemd service ─────────────────────────────────
-UNIT_FILE="/etc/systemd/system/garden-monitor.service"
+UNIT_FILE="/etc/systemd/system/home-garden-cameras.service"
 if [ ! -f "$UNIT_FILE" ]; then
     echo ""
     read -rp "==> Install as a systemd service (starts on boot)? [y/N] " REPLY
     if [[ "${REPLY,,}" == "y" ]]; then
         bash "$SCRIPT_DIR/install_service.sh"
-        echo "    Systemd service installed. Start it with: sudo systemctl start garden-monitor"
+        echo "    Systemd service installed. Start it with: sudo systemctl start home-garden-cameras"
     fi
 fi
 

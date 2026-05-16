@@ -675,8 +675,8 @@ class CameraManager:
             "datetime":     exif_dt,
             "make":         "Raspberry Pi" if CAM_BACKEND == "picamera2" else "Logitech",
             "model":        self.model,
-            "description":  "Garden Monitor Timelapse Frame" if prefix == "tl"
-                            else "Garden Monitor Photo",
+            "description":  "Home Garden Cameras Timelapse Frame" if prefix == "tl"
+                            else "Home Garden Cameras Photo",
             "hflip":        ctrl.get("hflip", False),
             "vflip":        ctrl.get("vflip", False),
             "exposure_mode": 1 if ctrl.get("exposure_time", 0) > 0 else 0,

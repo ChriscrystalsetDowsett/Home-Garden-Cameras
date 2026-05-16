@@ -1,10 +1,11 @@
 """Flask application — all HTTP routes."""
 import os
 from pathlib import Path
+from PIL import Image
 
 from flask import Flask, Response, render_template, make_response, jsonify, request, send_from_directory, after_this_request
 
-from .config import SNAPSHOT_DIR, VIDEOS_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY, CAM_BACKEND
+from .config import SNAPSHOT_DIR, VIDEOS_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY, CAM_BACKEND, PI_NAME
 from .camera import camera, cam_ctrl, cam_ctrl_lock
 from .timelapse import timelapse, get_compile_status
 from .recorder import video_recorder, AUDIO_AVAILABLE, audio_streamer
@@ -40,7 +41,8 @@ def _cors(response):
 def index():
     resp = make_response(render_template("index.html",
                                          audio_available=AUDIO_AVAILABLE,
-                                         cam_backend=CAM_BACKEND))
+                                         cam_backend=CAM_BACKEND,
+                                         pi_name=PI_NAME))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return resp
 
@@ -93,6 +95,13 @@ def snapshot():
     quality     = int(data.get("quality", 85))
     filename    = camera.capture(filter_name=filter_name, quality=quality)
     if filename:
+        try:
+            thumb_path = SNAPSHOT_DIR / (Path(filename).stem + '.thumb.jpg')
+            img = Image.open(SNAPSHOT_DIR / filename)
+            img.thumbnail((400, 300))
+            img.save(thumb_path, 'JPEG', quality=75)
+        except Exception:
+            pass
         return jsonify({"ok": True, "filename": filename})
     return jsonify({"ok": False}), 500
 
@@ -120,11 +129,15 @@ def gallery():
     entries = []
     with os.scandir(SNAPSHOT_DIR) as it:
         for entry in it:
-            if entry.name.endswith(".jpg"):
+            if entry.name.endswith(".thumb.jpg"):
                 st = entry.stat()
-                entries.append((st.st_mtime, entry.name, st.st_size))
+                entries.append((st.st_mtime, entry.name.replace(".thumb.jpg", ".jpg"), st.st_size))
     entries.sort(key=lambda x: x[0], reverse=True)
-    return jsonify([{"filename": n, "size": s} for _, n, s in entries[:100]])
+    return jsonify([
+        {"filename": n, "size": s,
+         "has_thumb": True}
+        for _, n, s in entries[:100]
+    ])
 
 
 # ── Timelapse ──────────────────────────────────────────────────────────────────
@@ -229,13 +242,12 @@ def list_videos():
     entries = []
     with os.scandir(VIDEOS_DIR) as it:
         for entry in it:
-            if entry.name.endswith(".mp4"):
+            if entry.name.endswith(".thumb.jpg"):
                 st = entry.stat()
-                entries.append((st.st_mtime, entry.name, st.st_size))
+                entries.append((st.st_mtime, entry.name.replace(".thumb.jpg", ".mp4"), st.st_size))
     entries.sort(key=lambda x: x[0], reverse=True)
     return jsonify([
-        {"filename": n, "size": s,
-         "has_thumb": (VIDEOS_DIR / n.replace(".mp4", ".thumb.jpg")).exists()}
+        {"filename": n, "size": s, "has_thumb": True}
         for _, n, s in entries[:50]
     ])
 

@@ -1,4 +1,4 @@
-# Transferring Garden Monitor to a New Pi
+# Transferring Home Garden Cameras to a New Pi
 
 This document gives the exact commands to copy the project from one Pi to
 another over SSH, skipping photos, videos, and other Pi-specific generated files.
@@ -31,8 +31,8 @@ Run this on the **source** Pi (the one you're copying *from*):
 rsync -av --progress \
   --filter=': .transferignore' \
   --exclude='.transferignore' \
-  ~/garden-monitor/ \
-  pi@<TARGET_IP>:~/garden-monitor/
+  ~/home-garden-cameras/ \
+  pi@<TARGET_IP>:~/home-garden-cameras/
 ```
 
 Replace `<TARGET_IP>` with the IP address or hostname of the new Pi.
@@ -55,7 +55,7 @@ Replace `pi` with the username on the target Pi if different.
 SSH into the **target** Pi and run:
 
 ```bash
-cd ~/garden-monitor
+cd ~/home-garden-cameras
 
 # 1. Install all dependencies
 bash scripts/install.sh
@@ -77,8 +77,8 @@ Add `-n` to rsync to simulate without copying anything:
 rsync -avn --progress \
   --filter=': .transferignore' \
   --exclude='.transferignore' \
-  ~/garden-monitor/ \
-  pi@<TARGET_IP>:~/garden-monitor/
+  ~/home-garden-cameras/ \
+  pi@<TARGET_IP>:~/home-garden-cameras/
 ```
 
 ---
@@ -89,8 +89,8 @@ If you *do* want to copy photos or videos to the new Pi:
 
 ```bash
 # Copy photos only
-rsync -av --progress ~/garden-monitor/data/photos/ pi@<TARGET_IP>:~/garden-monitor/data/photos/
+rsync -av --progress ~/home-garden-cameras/data/photos/ pi@<TARGET_IP>:~/home-garden-cameras/data/photos/
 
 # Copy videos only
-rsync -av --progress ~/garden-monitor/data/videos/ pi@<TARGET_IP>:~/garden-monitor/data/videos/
+rsync -av --progress ~/home-garden-cameras/data/videos/ pi@<TARGET_IP>:~/home-garden-cameras/data/videos/
 ```

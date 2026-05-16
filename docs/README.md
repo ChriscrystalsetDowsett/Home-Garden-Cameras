@@ -1,4 +1,4 @@
-# Garden Monitor
+# Home Garden Cameras
 
 A self-contained Raspberry Pi camera server with a mobile-friendly web UI.
 Stream live video, capture photos, record video, and run timelapses — all from
@@ -40,7 +40,7 @@ a browser on your phone or laptop.
    ```bash
    # Option A — copy from another Pi (see docs/TRANSFER.md)
    # Option B — clone from GitHub (if published)
-   git clone https://github.com/yourname/garden-monitor.git ~/garden-monitor
+   git clone https://github.com/yourname/home-garden-cameras.git ~/home-garden-cameras
    ```
 
 3. **Enable the camera** in raspi-config:
@@ -53,7 +53,7 @@ a browser on your phone or laptop.
 4. **Run the installer:**
 
    ```bash
-   cd ~/garden-monitor
+   cd ~/home-garden-cameras
    bash scripts/install.sh
    ```
 
@@ -105,7 +105,7 @@ Restart the app after changing this file.
 ## Project structure
 
 ```
-garden-monitor/
+home-garden-cameras/
   app/          Server-side Python package (Flask, camera, timelapse, etc.)
   static/       Frontend assets (currently inline; reserved for future use)
   templates/    Jinja2 HTML templates
@@ -131,7 +131,7 @@ bash scripts/stop.sh
 Or, if running via systemd:
 
 ```bash
-sudo systemctl stop garden-monitor
+sudo systemctl stop home-garden-cameras
 ```
 
 ---

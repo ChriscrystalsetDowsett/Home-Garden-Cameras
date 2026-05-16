@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Garden Monitor — entry point.
+"""Home Garden Cameras — entry point.
 
 Run directly:  python3 run.py
-Systemd:       ExecStart=/usr/bin/python3 /home/<user>/garden-monitor/run.py
+Systemd:       ExecStart=/usr/bin/python3 /home/<user>/home-garden-cameras/run.py
 """
 import os
 os.nice(10)   # yield CPU to SSH/network when under load;

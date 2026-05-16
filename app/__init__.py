@@ -1,1 +1,1 @@
-# garden_monitor — Pi Camera streaming server package
+# home_garden_cameras — Pi Camera streaming server package

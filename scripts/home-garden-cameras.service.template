@@ -1,5 +1,5 @@
 [Unit]
-Description=Garden Monitor Pi Camera Server
+Description=Home Garden Cameras Pi Camera Server
 After=network.target
 Wants=network.target
 

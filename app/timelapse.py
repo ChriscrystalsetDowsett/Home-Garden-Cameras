@@ -37,8 +37,8 @@ def compile_timelapse_to_video(files, output_name=None):
              "-movflags", "+faststart",
              "-metadata", f"creation_time={iso_ts}",
              "-metadata", f"title={out_stem}",
-             "-metadata", "comment=Garden Monitor Timelapse",
-             "-metadata", "encoder=Garden Monitor",
+             "-metadata", "comment=Home Garden Cameras Timelapse",
+             "-metadata", "encoder=Home Garden Cameras",
              str(out_path)],
             capture_output=True, timeout=7200,
         )

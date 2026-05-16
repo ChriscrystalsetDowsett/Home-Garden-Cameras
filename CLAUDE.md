@@ -1,9 +1,9 @@
-# Garden Monitor — Claude Code Instructions
+# Home Garden Cameras — Claude Code Instructions
 
 ## Project layout
 
 ```
-garden-monitor/
+home-garden-cameras/
   app/           Flask application package
     app.py       All HTTP routes
     camera.py    Camera backend (picamera2 / V4L2)
@@ -34,8 +34,8 @@ garden-monitor/
 
 - **Pi 5** (`/home/chris`) is the sole development machine. All code changes happen here.
 - **Other Pis** are camera nodes. They pull from GitHub to get updates — never push code directly to them.
-- After pushing: SSH into each camera Pi and run `git pull && sudo systemctl restart garden-monitor`.
-- **`/etc/systemd/system/garden-monitor.service` is NOT in git.** Changes to it (e.g. new `Environment=` lines) must be applied manually on every Pi that needs them.
+- After pushing: SSH into each camera Pi and run `git pull && sudo systemctl restart home-garden-cameras`.
+- **`/etc/systemd/system/home-garden-cameras.service` is NOT in git.** Changes to it (e.g. new `Environment=` lines) must be applied manually on every Pi that needs them.
 
 ---
 
@@ -43,11 +43,11 @@ garden-monitor/
 
 | What changed | Action required |
 |---|---|
-| Any `.py` file | `sudo systemctl restart garden-monitor` |
-| Any `templates/*.html` | `sudo systemctl restart garden-monitor` (Flask caches templates in production) |
-| `config/settings.yaml` | `sudo systemctl restart garden-monitor` (config is loaded at import time) |
+| Any `.py` file | `sudo systemctl restart home-garden-cameras` |
+| Any `templates/*.html` | `sudo systemctl restart home-garden-cameras` (Flask caches templates in production) |
+| `config/settings.yaml` | `sudo systemctl restart home-garden-cameras` (config is loaded at import time) |
 | `static/*.css` or `static/*.js` | Bump `?v=N` in the HTML `<link>`/`<script>` tag **and** restart so iOS Safari sees the new HTML |
-| `/etc/systemd/system/garden-monitor.service` | `sudo systemctl daemon-reload && sudo systemctl restart garden-monitor` |
+| `/etc/systemd/system/home-garden-cameras.service` | `sudo systemctl daemon-reload && sudo systemctl restart home-garden-cameras` |
 
 **If a restart appears to do nothing**, check for a stale process holding port 8080:
 

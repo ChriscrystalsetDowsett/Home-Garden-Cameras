@@ -8,6 +8,7 @@
 server:
   host: "0.0.0.0"      # listen on all interfaces; change to 127.0.0.1 to restrict
   port: 8080
+  pi_name: pi3          # unique identifier for this camera node — change per deployment
 
 camera:
   name: "my-pi"                   # identifies this feed — change per device (e.g. "Pi 4 Garden")
@@ -26,7 +27,7 @@ paths:
 # Set enabled to false to turn scheduling off without removing the times.
 schedule:
   enabled: false
-  camera_off: "22:00"   # 10:00 pm
+  camera_off: "21:00"   #  9:00 pm
   camera_on:  "06:00"   #  6:00 am
 
 # ── Dashboard — list of camera Pis to show in the /dashboard grid ─────────────
