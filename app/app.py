@@ -91,9 +91,10 @@ def set_resolution():
 @app.route("/api/snapshot", methods=["POST"])
 def snapshot():
     data        = request.json or {}
+    prefix      = data.get("label", "Photo")
     filter_name = data.get("filter", "none")
     quality     = int(data.get("quality", 85))
-    filename    = camera.capture(filter_name=filter_name, quality=quality)
+    filename    = camera.capture(prefix=prefix, filter_name=filter_name, quality=quality)
     if filename:
         try:
             thumb_path = SNAPSHOT_DIR / (Path(filename).stem + '.thumb.jpg')
