@@ -16,6 +16,15 @@ FPS          = 24
 JPEG_QUALITY = 85   # effects re-encode quality; v4l2 capture quality
 V4L2_DEVICE  = "/dev/video0"
 
+# ── C930e AE watchdog tuning ──────────────────────────────────────────────────
+# The C930e's aperture-priority AE resets to exposure_time=250 (~25ms) on every
+# VIDIOC_S_FMT call and can hunt in high-contrast scenes (bright glass roof vs
+# dark plants). These constants govern the startup seed and ongoing watchdog.
+_AE_SEED_EXP       = 60    # manual seed (100µs units; 60 = 6ms, near correct value)
+_AE_SEED_HOLD      = 2.0   # seconds to hold manual before releasing to auto
+_AE_CHECK_INTERVAL = 12    # seconds between watchdog luminance checks
+_AE_LUMA_CEILING   = 185   # mean 8-bit luma above which we force a re-seed
+
 # Optional picamera2 imports — only needed on CSI camera Pis.
 if CAM_BACKEND == "picamera2":
     from picamera2 import Picamera2
@@ -418,6 +427,22 @@ class CameraManager:
                 fmt.fmt.pix.pixelformat = _v4l2.V4L2_PIX_FMT_MJPEG
                 fcntl.ioctl(fd, _v4l2.VIDIOC_S_FMT, fmt)
 
+                # VIDIOC_S_FMT resets the C930e UVC state: exposure_time resets
+                # to its hardware default (250 ≈ 25ms) regardless of anything set
+                # before.  Immediately force a short manual exposure so that when
+                # streaming starts the first frames are already near the correct
+                # value.  UVC allows a concurrent v4l2-ctl open before REQBUFS.
+                with cam_ctrl_lock:
+                    _preseed = dict(cam_ctrl)
+                if _preseed.get("exposure_time", 0) == 0:
+                    subprocess.run(
+                        ["v4l2-ctl", "-d", V4L2_DEVICE,
+                         f"--set-ctrl=auto_exposure=1,"
+                         f"exposure_time_absolute={_AE_SEED_EXP},"
+                         f"exposure_dynamic_framerate=0"],
+                        capture_output=True, check=False,
+                    )
+
                 if fmt.fmt.pix.pixelformat != _v4l2.V4L2_PIX_FMT_MJPEG:
                     logging.error("v4l2 passthrough: camera rejected MJPG format — falling back to opencv")
                     return False
@@ -463,8 +488,28 @@ class CameraManager:
                     f"{actual_w}x{actual_h} @ {FPS}fps MJPEG",
                     flush=True,
                 )
+
+                # Hold the pre-seeded manual exposure while the camera physically
+                # applies it, then release to auto AE from this known-good point.
+                with cam_ctrl_lock:
+                    ctrl_snap = dict(cam_ctrl)
+                if ctrl_snap.get("exposure_time", 0) == 0:
+                    time.sleep(_AE_SEED_HOLD)
+                    subprocess.run(
+                        ["v4l2-ctl", "-d", V4L2_DEVICE, "--set-ctrl=auto_exposure=3"],
+                        capture_output=True, check=False,
+                    )
+
                 with cam_ctrl_lock:
                     self.apply_isp_controls(dict(cam_ctrl))
+
+                # Start AE watchdog — one instance, survives inner-loop restarts
+                if not getattr(self, "_ae_watchdog_thread", None) or \
+                        not self._ae_watchdog_thread.is_alive():
+                    self._ae_watchdog_thread = threading.Thread(
+                        target=self._ae_watchdog, daemon=True, name="ae-watchdog",
+                    )
+                    self._ae_watchdog_thread.start()
 
                 # ── Capture loop ───────────────────────────────────────────────
                 buf = _v4l2.v4l2_buffer()
@@ -735,9 +780,6 @@ class CameraManager:
             controls["AeMeteringMode"]   = int(c.get("ae_metering_mode",   2))
             controls["AeConstraintMode"] = int(c.get("ae_constraint_mode", 2))
             controls["HdrMode"]          = int(c.get("hdr_mode",           2))
-            crop_max = picam2.camera_properties.get("ScalerCropMaximum")
-            if crop_max:
-                controls["ScalerCrop"] = crop_max
             picam2.set_controls(controls)
         except Exception:
             pass
@@ -837,11 +879,63 @@ class CameraManager:
                  f"saturation={max(0, min(255, 128 + sat * 127 // 100))},"
                  f"sharpness={max(0, min(255, sv))},"
                  f"contrast={max(0, min(255, cv))},"
-                 f"backlight_compensation={bc}"],
+                 f"backlight_compensation={bc},"
+                 f"exposure_dynamic_framerate=0"],
                 capture_output=True, check=False,
             )
         except Exception:
             pass
+
+    # ── AE watchdog (v4l2 passthrough backend only) ───────────────────────────
+
+    def _ae_watchdog(self):
+        """Detect and correct ongoing AE overexposure on the C930e.
+
+        Runs every _AE_CHECK_INTERVAL seconds.  If mean frame luminance
+        exceeds _AE_LUMA_CEILING the AE is clearly stuck high: we force a
+        short manual exposure to break it out, wait _AE_SEED_HOLD seconds,
+        then release back to auto from that anchored starting point.
+        No-ops in manual-exposure mode so it never fights a deliberate setting.
+        """
+        while not self._stop.is_set():
+            if self._stop.wait(_AE_CHECK_INTERVAL):
+                break
+
+            with cam_ctrl_lock:
+                if int(cam_ctrl.get("exposure_time", 0)) > 0:
+                    continue  # user is in manual mode — don't interfere
+
+            with self.output.condition:
+                self.output.condition.wait(timeout=2)
+                frame = self.output.frame
+            if not frame:
+                continue
+
+            arr  = np.frombuffer(frame, dtype=np.uint8)
+            gray = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+            if gray is None:
+                continue
+
+            mean_luma = float(gray.mean())
+            if mean_luma <= _AE_LUMA_CEILING:
+                continue
+
+            logging.info(
+                "AE watchdog: mean luma %.0f > %d — re-seeding to %d",
+                mean_luma, _AE_LUMA_CEILING, _AE_SEED_EXP,
+            )
+            subprocess.run(
+                ["v4l2-ctl", "-d", V4L2_DEVICE,
+                 f"--set-ctrl=auto_exposure=1,exposure_time_absolute={_AE_SEED_EXP}"],
+                capture_output=True, check=False,
+            )
+            time.sleep(_AE_SEED_HOLD)
+            with cam_ctrl_lock:
+                if int(cam_ctrl.get("exposure_time", 0)) == 0:
+                    subprocess.run(
+                        ["v4l2-ctl", "-d", V4L2_DEVICE, "--set-ctrl=auto_exposure=3"],
+                        capture_output=True, check=False,
+                    )
 
     # ── Shutdown ───────────────────────────────────────────────────────────────
 
