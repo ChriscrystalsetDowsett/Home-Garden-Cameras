@@ -735,6 +735,9 @@ class CameraManager:
             controls["AeMeteringMode"]   = int(c.get("ae_metering_mode",   2))
             controls["AeConstraintMode"] = int(c.get("ae_constraint_mode", 2))
             controls["HdrMode"]          = int(c.get("hdr_mode",           2))
+            crop_max = picam2.camera_properties.get("ScalerCropMaximum")
+            if crop_max:
+                controls["ScalerCrop"] = crop_max
             picam2.set_controls(controls)
         except Exception:
             pass
