@@ -1,3 +1,85 @@
+# CLAUDE.md — pi5 Camera Node
+
+## This Pi
+- **Hostname**: pi5
+- **Tailscale IP**: 100.94.38.51
+- **LAN IP**: 192.168.4.131 (also has 192.168.4.132)
+- **Hardware**: Raspberry Pi 5 Model B Rev 1.1, Pi Camera v3 (IMX708, CSI)
+- **Role**: Primary development and commit machine for the fleet. Also a camera
+  node — streams live video, captures scheduled photos, serves the
+  home-garden-cameras web app including the multi-camera dashboard.
+  Cloudflare tunnel provides external HTTPS access.
+
+## App location
+- **Path**: /home/chris/pi-apps/home-garden-cameras
+- **Port**: 8080
+- **Entry point**: scripts/start.sh via systemd (garden-monitor.service)
+
+## Services
+| Service | Port | Purpose | Restart command |
+|---|---|---|---|
+| garden-monitor | 8080 | Camera stream + web app + dashboard | sudo systemctl restart garden-monitor |
+| cloudflared | — | Cloudflare tunnel (external access) | sudo systemctl restart cloudflared |
+
+## Git workflow
+- GitHub is the source of truth: github.com/ChriscrystalsetDowsett/Home-Garden-Cameras
+- **This Pi is the designated fleet commit node** — new code is developed and tested
+  here, then committed and pushed to GitHub from here when ready for the whole fleet
+- pi3 and pi4 are pull-only and should never commit or push
+- To update after a pull on another Pi: git pull origin main, then restart service
+- Always check git status before and after any work: git status
+
+## Camera
+- **Model**: Pi Camera v3 (IMX708, CSI ribbon cable)
+- **Backend**: picamera2
+- **Resolution**: 1920×1080
+- **Special notes**: stream_bitrate: 10000000 controls live feed quality for the
+  picamera2 MJPEGEncoder. XDG_RUNTIME_DIR=/run/user/1000 set in service — audio
+  streaming is supported. This Pi hosts the /dashboard multi-camera grid, which
+  proxies feeds from pi3 (192.168.4.206 :5000) and pi4 (192.168.4.186 :8080).
+  Stopping cloudflared drops external access for all users — do not stop it
+  without warning Chris first.
+
+## Key file paths
+- App: /home/chris/pi-apps/home-garden-cameras
+- Settings: /home/chris/pi-apps/home-garden-cameras/config/settings.yaml
+- Logs: journalctl -u garden-monitor -f
+- Photos (local): /home/chris/pi-apps/home-garden-cameras/data/photos/
+- Videos (local): /home/chris/pi-apps/home-garden-cameras/data/videos/
+- Photos (on bigpc after rsync): /mnt/storage/media/pi5/photos/
+
+## Conventions
+- Always show a diff before editing any file
+- Never edit /etc/systemd/system/ files without showing the change first
+- Never edit crontabs without showing the proposed change first
+- After any .py file change: sudo systemctl restart garden-monitor
+- After any settings.yaml change: sudo systemctl restart garden-monitor
+- Verify after every change: curl -s -o /dev/null -w "%{http_code}" http://localhost:8080
+
+## What NOT to touch
+- /etc/fstab — ask Chris first
+- /etc/systemd/system/garden-monitor.service — show diff, get confirmation
+- /etc/systemd/system/cloudflared.service — show diff, get confirmation; stopping
+  this drops external access for all users
+- crontab — show proposed change, get confirmation (rsync runs at 02:30)
+- Any file outside /home/chris/pi-apps/home-garden-cameras without explicit instruction
+
+## Checking in after changes
+Always end a work session by running:
+  git status
+  systemctl status garden-monitor
+  curl -s -o /dev/null -w "%{http_code}" http://localhost:8080
+
+Report all three results before finishing.
+
+## bigpc context
+- bigpc has SSH access to this Pi via Tailscale (100.75.224.125)
+- Claude Code runs on bigpc and SSHes in as needed
+- Ollama runs on bigpc at http://172.17.0.1:11434 (NOT localhost)
+- Photos rsync nightly from this Pi to bigpc at 02:30 (via /home/chris/sync-to-bigpc.sh)
+
+---
+
 # Home Garden Cameras — Claude Code Instructions
 
 ## Project layout
@@ -32,22 +114,28 @@ home-garden-cameras/
 
 ## Deployment model
 
-- **Pi 5** (`/home/chris`) is the sole development machine. All code changes happen here.
-- **Other Pis** are camera nodes. They pull from GitHub to get updates — never push code directly to them.
-- After pushing: SSH into each camera Pi and run `git pull && sudo systemctl restart home-garden-cameras`.
-- **`/etc/systemd/system/home-garden-cameras.service` is NOT in git.** Changes to it (e.g. new `Environment=` lines) must be applied manually on every Pi that needs them.
+- **Pi 5** is the primary development and commit machine. All code changes are tested
+  here and pushed to GitHub from here.
+- **Pi 3 and Pi 4** are camera nodes. They pull from GitHub to get updates — never
+  push code directly from them.
+- After pushing from pi5: SSH into each camera Pi and run
+  `git pull && sudo systemctl restart <service>`.
+- **`/etc/systemd/system/<service>.service` is NOT in git.** Changes to it (e.g. new
+  `Environment=` lines) must be applied manually on every Pi that needs them.
 
 ---
 
 ## Restart rules — know what requires what
 
+Service name on this Pi: **garden-monitor** (see Services table above)
+
 | What changed | Action required |
 |---|---|
-| Any `.py` file | `sudo systemctl restart home-garden-cameras` |
-| Any `templates/*.html` | `sudo systemctl restart home-garden-cameras` (Flask caches templates in production) |
-| `config/settings.yaml` | `sudo systemctl restart home-garden-cameras` (config is loaded at import time) |
+| Any `.py` file | `sudo systemctl restart garden-monitor` |
+| Any `templates/*.html` | `sudo systemctl restart garden-monitor` (Flask caches templates in production) |
+| `config/settings.yaml` | `sudo systemctl restart garden-monitor` (config is loaded at import time) |
 | `static/*.css` or `static/*.js` | Bump `?v=N` in the HTML `<link>`/`<script>` tag **and** restart so iOS Safari sees the new HTML |
-| `/etc/systemd/system/home-garden-cameras.service` | `sudo systemctl daemon-reload && sudo systemctl restart home-garden-cameras` |
+| `/etc/systemd/system/garden-monitor.service` | `sudo systemctl daemon-reload && sudo systemctl restart garden-monitor` |
 
 **If a restart appears to do nothing**, check for a stale process holding port 8080:
 
@@ -149,7 +237,7 @@ Every `<link>` and `<script>` in the HTML templates uses a `?v=N` query string:
 
 2. **Bumping the `?v=N` on a static file but not restarting.** iOS Safari will still serve the old HTML (with the old version string) from its cache until the server sends `Cache-Control: no-store` on the HTML itself. The restart forces a new HTML response.
 
-3. **Not checking for a stale process on port 8080.** `systemctl restart` can appear to succeed (`is-active` says `active`) while an old PID is still holding the port. Always confirm with `sudo fuser 8080/tcp` if behaviour doesn't change after a restart.
+3. **Not checking for a stale process on the port.** `systemctl restart` can appear to succeed (`is-active` says `active`) while an old PID is still holding the port. Always confirm with `sudo fuser <port>/tcp` if behaviour doesn't change after a restart.
 
 4. **Using `position: fixed` on a child of a transformed parent.** The element will appear to be fixed but is actually positioned relative to its transformed ancestor. Expand the ancestor to fill the screen instead.
 
