@@ -1,5 +1,5 @@
 """Camera hardware management — supports picamera2 (CSI) and V4L2/OpenCV (USB)."""
-import ctypes, fcntl, io, logging, mmap, os, select, time, threading, subprocess
+import ctypes, fcntl, hashlib, io, logging, mmap, os, select, time, threading, subprocess
 from datetime import datetime
 
 import cv2
@@ -347,7 +347,8 @@ class CameraManager:
         backoff     = 1
         invalid_run = 0
         LOG_EVERY   = 50
-        SELECT_TIMEOUT_LIMIT = 5   # seconds of no frames → camera is hung
+        SELECT_TIMEOUT_LIMIT  = 5   # seconds of no frames → camera is hung
+        CONTENT_FREEZE_LIMIT  = 60  # consecutive identical frames (~2.5 s at 24 fps) → content freeze
 
         while not self._stop.is_set():
             self._restart.clear()
@@ -418,6 +419,16 @@ class CameraManager:
                 fmt.fmt.pix.pixelformat = _v4l2.V4L2_PIX_FMT_MJPEG
                 fcntl.ioctl(fd, _v4l2.VIDIOC_S_FMT, fmt)
 
+                # VIDIOC_S_FMT resets exposure_time_absolute to 250 (~25ms).
+                # Seed manual 60 (~6ms) so AE converges up from near-correct
+                # rather than down from 250, eliminating the overexposure window.
+                subprocess.run(
+                    ["v4l2-ctl", f"--device={V4L2_DEVICE}",
+                     "--set-ctrl=auto_exposure=1",
+                     "--set-ctrl=exposure_time_absolute=60"],
+                    capture_output=True,
+                )
+
                 if fmt.fmt.pix.pixelformat != _v4l2.V4L2_PIX_FMT_MJPEG:
                     logging.error("v4l2 passthrough: camera rejected MJPG format — falling back to opencv")
                     return False
@@ -463,6 +474,7 @@ class CameraManager:
                     f"{actual_w}x{actual_h} @ {FPS}fps MJPEG",
                     flush=True,
                 )
+                time.sleep(2.0)  # hold manual seed while camera initialises
                 with cam_ctrl_lock:
                     self.apply_isp_controls(dict(cam_ctrl))
 
@@ -472,6 +484,8 @@ class CameraManager:
                 buf.memory = _v4l2.V4L2_MEMORY_MMAP
 
                 select_timeouts = 0
+                freeze_hash     = None
+                freeze_count    = 0
                 while not self._stop.is_set() and not self._restart.is_set():
                     ready, _, _ = select.select([fd], [], [], 1.0)
                     if not ready:
@@ -497,6 +511,25 @@ class CameraManager:
                         continue
                     invalid_run = 0
                     self.output.write(frame)
+
+                    # Content-freeze detection: the C930e delivers byte-identical
+                    # JPEG frames when the sensor stream stalls without disconnecting.
+                    # Sensor noise guarantees genuine frames are never byte-identical.
+                    fh = hashlib.md5(frame).hexdigest()
+                    if fh == freeze_hash:
+                        freeze_count += 1
+                        if freeze_count >= CONTENT_FREEZE_LIMIT:
+                            logging.warning(
+                                "v4l2 passthrough: content freeze — %d identical frames, resetting camera",
+                                freeze_count,
+                            )
+                            self._usb_reset_camera()
+                            freeze_hash  = None
+                            freeze_count = 0
+                            break
+                    else:
+                        freeze_hash  = fh
+                        freeze_count = 0
 
             except OSError as e:
                 logging.error("v4l2 passthrough error: %s", e)
