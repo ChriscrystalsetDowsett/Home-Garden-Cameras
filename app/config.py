@@ -40,6 +40,7 @@ STREAM_BITRATE = max(1_000_000, int(_cfg["camera"].get("stream_bitrate", 10_000_
 
 CAM_BACKEND = _cfg["camera"].get("backend", "picamera2")   # "picamera2" | "v4l2"
 V4L2_MODE   = _cfg["camera"].get("v4l2_mode", "passthrough")  # "passthrough" | "opencv"
+CAM_USB_ID  = _cfg["camera"].get("usb_id", "046d:0843")    # vendor:product for USB reset/presence check
 
 # ── Dashboard camera list ─────────────────────────────────────────────────────
 CAMERAS            = _cfg.get("cameras", [])

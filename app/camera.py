@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from .config import (SNAPSHOT_DIR, RESOLUTIONS, CAM_CTRL_DEFAULTS,
-                     DEFAULT_RESOLUTION, CAM_BACKEND, V4L2_MODE,
+                     DEFAULT_RESOLUTION, CAM_BACKEND, V4L2_MODE, CAM_USB_ID,
                      STREAM_JPEG_QUALITY, STREAM_BITRATE)
 from .film import FILM_FILTERS
 from .postprocess import postprocess_jpeg
@@ -319,7 +319,8 @@ class CameraManager:
                     product = open(os.path.join(entry.path, "idProduct")).read().strip()
                 except OSError:
                     continue
-                if vendor == "046d" and product == "0843":
+                _usb_vendor, _usb_product = CAM_USB_ID.split(":")
+                if vendor == _usb_vendor and product == _usb_product:
                     busnum = int(open(os.path.join(entry.path, "busnum")).read().strip())
                     devnum = int(open(os.path.join(entry.path, "devnum")).read().strip())
                     dev_path = f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"
@@ -355,6 +356,24 @@ class CameraManager:
             fd    = None
             mmaps = []
             try:
+                # Verify USB device is present before trying to open /dev/video0.
+                # Avoids a misleading OSError on the ioctl when the cable is unplugged.
+                _found = False
+                try:
+                    _v, _p = CAM_USB_ID.split(":")
+                    for _e in os.scandir("/sys/bus/usb/devices"):
+                        try:
+                            if (open(os.path.join(_e.path, "idVendor")).read().strip()  == _v and
+                                    open(os.path.join(_e.path, "idProduct")).read().strip() == _p):
+                                _found = True
+                                break
+                        except OSError:
+                            continue
+                except OSError:
+                    pass
+                if not _found:
+                    raise OSError(f"{CAM_USB_ID} not found in USB sysfs — camera absent")
+
                 # Apply hardware controls via subprocess before opening the fd.
                 # auto_exposure=3 = aperture priority (auto); without this the
                 # camera may default to manual exposure and appear overexposed.
@@ -502,7 +521,8 @@ class CameraManager:
                     frame     = bytes(mmaps[buf.index][:bytesused])
                     fcntl.ioctl(fd, _v4l2.VIDIOC_QBUF, buf)
 
-                    if bytesused < 4 or frame[:2] != b'\xff\xd8' or frame[-2:] != b'\xff\xd9':
+                    eoi = frame.rfind(b'\xff\xd9')
+                    if bytesused < 4 or frame[:2] != b'\xff\xd8' or eoi < 0:
                         invalid_run += 1
                         if invalid_run % LOG_EVERY == 1:
                             logging.warning(
@@ -510,12 +530,12 @@ class CameraManager:
                             )
                         continue
                     invalid_run = 0
-                    self.output.write(frame)
+                    self.output.write(frame[:eoi + 2])
 
                     # Content-freeze detection: the C930e delivers byte-identical
                     # JPEG frames when the sensor stream stalls without disconnecting.
                     # Sensor noise guarantees genuine frames are never byte-identical.
-                    fh = hashlib.md5(frame).hexdigest()
+                    fh = hashlib.md5(frame[:eoi + 2]).hexdigest()
                     if fh == freeze_hash:
                         freeze_count += 1
                         if freeze_count >= CONTENT_FREEZE_LIMIT:
