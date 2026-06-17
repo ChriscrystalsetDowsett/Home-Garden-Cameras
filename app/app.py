@@ -15,6 +15,19 @@ from .dashboard import dashboard as dashboard_bp
 from .servo import servo
 from . import scheduler
 
+SHUTTER_SPEEDS = [
+    ("Auto", 0), ("1/8000", 125), ("1/6400", 156), ("1/5000", 200),
+    ("1/4000", 250), ("1/3200", 313), ("1/2500", 400), ("1/2000", 500),
+    ("1/1600", 625), ("1/1250", 800), ("1/1000", 1000), ("1/800", 1250),
+    ("1/640", 1563), ("1/500", 2000), ("1/400", 2500), ("1/320", 3125),
+    ("1/250", 4000), ("1/200", 5000), ("1/160", 6250), ("1/125", 8000),
+    ("1/100", 10000), ("1/80", 12500), ("1/60", 16667), ("1/50", 20000),
+    ("1/40", 25000), ("1/30", 33333), ("1/25", 40000), ("1/20", 50000),
+    ("1/15", 66667), ("1/13", 76923), ("1/10", 100000), ("1/8", 125000),
+    ("1/6", 166667), ("1/5", 200000), ("1/4", 250000), ("1/3", 333333),
+    ("1/2", 500000), ("0.6s", 600000), ("0.8s", 800000), ("1s", 1000000),
+]
+
 # Wire the recorder into the camera stream so it captures what the user sees
 camera.output.recorder = video_recorder
 scheduler.start(camera)
@@ -279,6 +292,10 @@ def delete_video(filename):
 @app.route("/api/camera_controls", methods=["POST"])
 def set_cam_controls():
     data = request.json or {}
+    if "exposure_index" in data:
+        idx = int(data.pop("exposure_index"))
+        idx = max(0, min(idx, len(SHUTTER_SPEEDS) - 1))
+        data["exposure_time"] = SHUTTER_SPEEDS[idx][1]
     with cam_ctrl_lock:
         for k, v in data.items():
             if k in CAM_CTRL_DEFAULTS:
