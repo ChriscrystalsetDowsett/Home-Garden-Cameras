@@ -5,7 +5,8 @@ from PIL import Image
 
 from flask import Flask, Response, render_template, make_response, jsonify, request, send_from_directory, after_this_request
 
-from .config import SNAPSHOT_DIR, VIDEOS_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY, CAM_BACKEND, PI_NAME
+from .config import SNAPSHOT_DIR, VIDEOS_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY, CAM_BACKEND, PI_NAME, \
+                   GREENHOUSE_HOST
 from .camera import camera, cam_ctrl, cam_ctrl_lock
 from .timelapse import timelapse, get_compile_status
 from .recorder import video_recorder, AUDIO_AVAILABLE, audio_streamer
@@ -25,6 +26,10 @@ app = Flask(
 )
 app.secret_key = SECRET_KEY
 app.register_blueprint(dashboard_bp)
+
+if GREENHOUSE_HOST:
+    from .greenhouse import greenhouse as greenhouse_bp
+    app.register_blueprint(greenhouse_bp)
 
 
 @app.after_request

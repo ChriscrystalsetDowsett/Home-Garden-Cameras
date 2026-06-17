@@ -56,6 +56,11 @@ SERVO_PAN_PIN  = int(_servo.get("pan_pin",  18))
 SERVO_TILT_PIN = int(_servo.get("tilt_pin", 19))
 SERVO_SPEED    = max(0.0, min(1.0, float(_servo.get("speed", 0.8))))
 
+# ── Greenhouse proxy ──────────────────────────────────────────────────────────
+_gh             = _cfg.get("greenhouse", {})
+GREENHOUSE_HOST = _gh.get("host", "")
+GREENHOUSE_PORT = int(_gh.get("port", 5000))
+
 # ── Camera schedule ───────────────────────────────────────────────────────────
 _sched             = _cfg.get("schedule", {})
 SCHEDULE_ENABLED   = bool(_sched.get("enabled", False))
