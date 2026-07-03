@@ -582,7 +582,8 @@ async function loadVideos() {
     files.forEach(f => {
       const a = document.createElement('a');
       a.className = 'gallery-item video-item';
-      a.href = 'https://media.chrisdowsett.com/media/' + PI_NAME + '/videos/' + f.filename;
+      a.href = f.local ? ('/videos/' + f.filename)
+                       : ('https://media.chrisdowsett.com/media/' + PI_NAME + '/videos/' + f.filename);
       a.target = '_blank';
       a.title = f.filename;
 
@@ -653,7 +654,10 @@ async function loadGallery() {
       files.forEach(f => {
         const a = document.createElement('a');
         a.className = 'gallery-item';
-        a.href = 'https://media.chrisdowsett.com/media/' + PI_NAME + '/photos/' + f.filename;
+        // Fresh photos are still local; after the nightly sync only the
+        // archived copy on media.chrisdowsett.com has the full-size file.
+        a.href = f.local ? ('/snapshots/' + f.filename)
+                         : ('https://media.chrisdowsett.com/media/' + PI_NAME + '/photos/' + f.filename);
         a.target = '_blank';
         a.title = f.filename;
         const img = document.createElement('img');
@@ -1366,6 +1370,16 @@ async function loadCtrlDefaults() {
     const d = await r.json();
     Object.assign(_serverDefaults, d);
     Object.assign(_ctrl, d);
+    // Overlay the camera's live state so a reload doesn't desync the
+    // sliders from whatever the camera is actually running.
+    try {
+      const lr = await fetch('/api/camera_controls');
+      if (lr.ok) {
+        const live = await lr.json();
+        delete _ctrl.exposure_index;
+        Object.assign(_ctrl, live);
+      }
+    } catch (_) {}
     syncCtrlUI();
   } catch (_) {}
 }
