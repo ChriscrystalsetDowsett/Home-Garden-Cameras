@@ -47,7 +47,6 @@
 
         <div class="tile-stream-wrap">
           <img class="tile-stream-img"
-               src=""
                alt="{{ cam.name | e }}"
                onload="onTileLoad(this)"
                onerror="onTileError(this)">
@@ -99,7 +98,7 @@
   </div>
 
   <div class="drawer-stream-wrap">
-    <img id="drawer-stream-img" src="" alt="Live feed"
+    <img id="drawer-stream-img" alt="Live feed"
          onload="onDrawerStreamLoad()" onerror="onDrawerStreamError()">
     <div id="drawer-offline-msg">Camera offline</div>
 
