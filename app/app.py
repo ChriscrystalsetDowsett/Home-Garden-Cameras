@@ -1,5 +1,6 @@
 """Flask application — all HTTP routes."""
 import os
+import time
 from pathlib import Path
 from PIL import Image
 
@@ -312,7 +313,10 @@ def servo_status():
 
 @app.route("/api/stats")
 def stats():
-    return jsonify(get_stats())
+    s = get_stats()
+    age = time.time() - camera.output.last_write if camera.output.last_write else None
+    s["frame_age_s"] = round(age, 1) if age is not None else None
+    return jsonify(s)
 
 
 @app.route("/api/info")
