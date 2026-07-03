@@ -1,0 +1,221 @@
+================================================================================
+GARDEN MONITOR — CAMERA AUDIT (Pi 4)
+Date: 2026-05-11
+================================================================================
+
+════════════════════════════════════════════════════════════════════════════════
+PHASE 1 — SYSTEM SNAPSHOT
+════════════════════════════════════════════════════════════════════════════════
+
+Kernel:
+  Linux chris 6.12.75+rpt-rpi-v8 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1~bookworm (2026-03-11) aarch64 GNU/Linux
+
+OS:
+  Debian GNU/Linux 12 (bookworm)
+
+Hardware model:
+  Raspberry Pi 4 Model B Rev 1.4
+
+rpicam-hello --list-cameras:
+  0 : imx708 [4608x2592 10-bit] (/base/soc/i2c0mux/i2c@1/imx708@1a)
+      Modes: 'SBGGR10_CSI2P' : 1536x864 [30.00 fps]
+                               2304x1296 [30.00 fps]
+                               4608x2592 [30.00 fps]
+  → IMX708 = Camera Module 3 (CSI ribbon cable attached, detected)
+  NOTE: 'libcamera-hello' is not in PATH — it was renamed to 'rpicam-hello'
+        on current Raspberry Pi OS. Both refer to the same tool.
+
+vcgencmd get_camera:
+  supported=0 detected=0, libcamera interfaces=0
+  → This is expected: vcgencmd is a legacy VideoCore tool; it does not
+    reflect the libcamera stack. IMX708 is confirmed above via rpicam-hello.
+
+v4l2-ctl --list-devices:
+  bcm2835-codec-decode  → /dev/video10,11,12,18,31  (hardware encoder/decoder)
+  bcm2835-isp           → /dev/video13-16,20-23     (ISP pipeline)
+  unicam (CSI)          → /dev/video0, /dev/video1  (CSI input)
+  rpi-hevc-dec          → /dev/video19
+  bcm2835-codec (vchiq) → /dev/media3
+  NOTE: /dev/video0 is the CSI unicam input — NOT a USB camera.
+        After the USB camera is attached, it will likely claim /dev/video0
+        (displacing unicam) or appear as /dev/video2.  Confirm with
+        v4l2-ctl --list-devices after plugging in.
+
+arecord -l:
+  No capture hardware found. (No mic attached — expected.)
+
+════════════════════════════════════════════════════════════════════════════════
+PHASE 2 — CAMERA SERVICE AUDIT
+════════════════════════════════════════════════════════════════════════════════
+
+Service name:      garden-monitor.service
+Status:            active (running) since May 07
+Unit file:         /etc/systemd/system/garden-monitor.service (NOT in git)
+
+[Unit]
+  Description=Garden Monitor Pi Camera Server
+  After=network.target
+
+[Service]
+  Type=simple
+  User=chris
+  WorkingDirectory=/home/chris/garden-monitor
+  ExecStart=/home/chris/garden-monitor/scripts/start.sh --fg
+  Restart=on-failure
+  RestartSec=5
+
+  ⚠ NO Environment= lines in the service file.
+    The CLAUDE.md notes that audio streaming requires:
+      Environment=XDG_RUNTIME_DIR=/run/user/1000
+    (Not currently needed — no mic attached — but required before audio is used.)
+
+Actual process invoked (start.sh → foreground mode):
+  python3 run.py  (pid 708, running since May 07, >6700 CPU hours)
+
+Other running Python processes (unrelated to garden-monitor):
+  pid 709  motor_control.py             → port 5001
+  pid 1002 /home/chris/pi-dht11-monitor → port 5000
+
+════════════════════════════════════════════════════════════════════════════════
+PHASE 3 — APPLICATION AUDIT
+════════════════════════════════════════════════════════════════════════════════
+
+App root:   /home/chris/garden-monitor/
+Entry point: run.py → imports app/ package
+
+Key files:
+  app/camera.py    Camera backend (picamera2 / V4L2 dual-mode)
+  app/config.py    Loads settings.yaml; exposes CAM_BACKEND constant
+  app/timelapse.py Focus-lock helpers (picamera2/IMX708 only)
+  config/settings.yaml    Active config (user-editable)
+  config/settings.yaml.example  Shows all available keys
+
+Active CAM_BACKEND:
+  settings.yaml has NO 'backend:' key under 'camera:'.
+  config.py default: CAM_BACKEND = _cfg["camera"].get("backend", "picamera2")
+  → Therefore this Pi currently runs the PICAMERA2 backend.
+
+Camera backend constants (camera.py):
+  FPS          = 24
+  JPEG_QUALITY = 85
+  V4L2_DEVICE  = "/dev/video0"   ← hardcoded in camera.py line 15
+                                    ⚠ MUST confirm device node after USB swap
+
+settings.yaml (active values):
+  server.host:                0.0.0.0
+  server.port:                8080
+  camera.name:                "Pi 4"
+  camera.default_resolution:  1920x1080
+  camera.stream_quality:      40
+  camera.hflip:               false
+  camera.vflip:               false
+  schedule.enabled:           true
+  schedule.camera_off:        21:00
+  schedule.camera_on:         06:00
+  NO backend: key (defaults to picamera2)
+
+picamera2-specific code paths:
+  camera.py:18-19    Conditional import: from picamera2 import Picamera2
+  camera.py:178-234  _open_picamera2() / _loop_picamera2()
+  camera.py:390-417  _isp_picamera2() — sets AeEnable, ExposureTime,
+                     AnalogueGain, AwbEnable, ColourTemperature,
+                     Brightness, Saturation, Sharpness, Contrast
+  camera.py:410-413  AfMode, AfRange (autofocus — IMX708/CM3 only)
+  timelapse.py:146-181  focus_lock() / focus_release() — picamera2 only,
+                         silently no-ops if backend != picamera2
+
+════════════════════════════════════════════════════════════════════════════════
+PHASE 4 — DEPENDENCY SNAPSHOT
+════════════════════════════════════════════════════════════════════════════════
+
+pip3 packages (camera/web relevant):
+  Flask                   2.2.2
+  Flask-SocketIO          5.6.1
+  opencv-python-headless  4.13.0.92
+  picamera2               0.3.31         ← CSI-only; not needed for USB
+  python3-libcamera       (system)       ← CSI-only
+
+dpkg packages:
+  libcamera0.5            0.5.2+rpt20250903  ← CSI/libcamera stack
+  libcamera-ipa           0.5.2+rpt20250903  ← CSI/libcamera stack
+  libcamera-tools         0.5.2+rpt20250903  ← includes rpicam-hello etc.
+  libcamera-v4l2          0.5.2+rpt20250903
+  libcamera-ipa           0.5.2+rpt20250903
+  python3-libcamera       0.5.2+rpt20250903  ← Python bindings for picamera2
+  python3-picamera2       0.3.31             ← High-level Pi Camera API
+  rpicam-apps             1.9.0              ← rpicam-still, rpicam-vid etc.
+  rpicam-apps-core        1.9.0
+  libspa-0.2-libcamera    1.2.7
+  pipewire-libcamera      1.2.7
+  ffmpeg                  5.1.8
+  libv4l2rds0             1.22.1
+
+picamera2-SPECIFIC items that do NOT apply to USB webcams:
+  • python3-picamera2 / picamera2 pip package (entire library irrelevant for USB)
+  • python3-libcamera (binding layer for libcamera stack)
+  • AfMode / AfRange ISP controls (autofocus — IMX708 hardware only)
+  • ColourTemperature via libcamera AwbEnable (use v4l2-ctl instead)
+  • rpicam-apps tools (rpicam-still, rpicam-vid) — no USB equivalent needed
+  • The app already has a full V4L2/OpenCV backend — no new code required
+
+SAFE TO KEEP after USB swap (already generic):
+  • opencv-python-headless (used by both backends)
+  • ffmpeg (used by VideoRecorder)
+  • Flask, Flask-SocketIO (web layer — unchanged)
+  • libcamera-v4l2 (V4L2 compatibility shim — harmless, may help)
+
+════════════════════════════════════════════════════════════════════════════════
+PHASE 5 — NETWORK / ACCESS
+════════════════════════════════════════════════════════════════════════════════
+
+Tailscale IPs:
+  IPv4: 100.110.247.12
+  IPv6: fd7a:115c:a1e0::cc01:f727
+
+Web server port:
+  garden-monitor → 0.0.0.0:8080  (pid 708, python3 run.py)
+  motor_control  → 0.0.0.0:5001  (pid 709)
+  pi-dht11       → 0.0.0.0:5000  (pid 1002)
+
+================================================================================
+SUMMARY — WHAT CHANGES ARE NEEDED AFTER THE USB CAMERA SWAP
+================================================================================
+
+1. CAMERA MODULE 3 CONFIRMED ATTACHED: YES
+   IMX708 detected on CSI bus at /base/soc/i2c0mux/i2c@1/imx708@1a
+   (rpicam-hello confirms; vcgencmd output is a legacy tool and can be ignored)
+
+2. SERVICE NAME AND START COMMAND:
+   Service:   garden-monitor.service
+   Start:     python3 run.py
+              (invoked via /home/chris/garden-monitor/scripts/start.sh --fg)
+   User:      chris
+   WorkDir:   /home/chris/garden-monitor
+
+3. LIBCAMERA-SPECIFIC ITEMS TO ADDRESS AFTER USB SWAP:
+   a) config/settings.yaml — ADD:  backend: "v4l2"  under the camera: block
+      This is the ONLY required change to the app to switch backends.
+   b) V4L2_DEVICE="/dev/video0" (camera.py:15) — verify the USB camera
+      appears on /dev/video0 after plugging in. If it lands elsewhere
+      (e.g. /dev/video2 because unicam occupies video0), either:
+        • Disable the CSI overlay in /boot/firmware/config.txt, OR
+        • Change V4L2_DEVICE in camera.py to the correct node.
+   c) picamera2 pip package and python3-libcamera system package can be
+      left installed (they are harmless) — no need to uninstall.
+   d) autofocus (AfMode/AfRange) will silently no-op via the existing guard
+      in timelapse.py — no code change needed.
+
+4. CONFIG VALUES TO CHANGE IN settings.yaml:
+   REQUIRED:
+     camera.backend: "v4l2"           (add this key — currently missing/defaults to picamera2)
+   OPTIONAL / COSMETIC:
+     camera.name: "Pi 4 USB"          (or whatever identifies this feed in the dashboard)
+     camera.default_resolution: ...   (USB webcam may not support 1920x1080; check with v4l2-ctl)
+     camera.hflip / vflip:            (adjust for new physical camera orientation)
+
+5. GIT REPO URL:
+   git@github.com:ChriscrystalsetDowsett/Garden-Monitor.git
+
+================================================================================
+END OF AUDIT
+================================================================================
