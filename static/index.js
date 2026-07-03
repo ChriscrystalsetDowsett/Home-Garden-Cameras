@@ -1186,23 +1186,33 @@ let _serverDefaults = Object.assign({}, CTRL_DEFAULTS);
 let _ctrl = Object.assign({}, CTRL_DEFAULTS);
 let _ctrlDebounce = null;
 
-// Discrete shutter speed steps (microseconds); index 0 = Auto
-const SHUTTER_STEPS = [0, 500, 2000, 8333, 16667, 33333, 66667, 250000, 1000000];
 const GAIN_STEPS = [0, 1, 2, 4, 8, 16];
+const SHUTTER_SPEEDS = [
+    ["Auto", 0], ["1/8000", 125], ["1/6400", 156], ["1/5000", 200],
+    ["1/4000", 250], ["1/3200", 313], ["1/2500", 400], ["1/2000", 500],
+    ["1/1600", 625], ["1/1250", 800], ["1/1000", 1000], ["1/800", 1250],
+    ["1/640", 1563], ["1/500", 2000], ["1/400", 2500], ["1/320", 3125],
+    ["1/250", 4000], ["1/200", 5000], ["1/160", 6250], ["1/125", 8000],
+    ["1/100", 10000], ["1/80", 12500], ["1/60", 16667], ["1/50", 20000],
+    ["1/40", 25000], ["1/30", 33333], ["1/25", 40000], ["1/20", 50000],
+    ["1/15", 66667], ["1/13", 76923], ["1/10", 100000], ["1/8", 125000],
+    ["1/6", 166667], ["1/5", 200000], ["1/4", 250000], ["1/3", 333333],
+    ["1/2", 500000], ["0.6s", 600000], ["0.8s", 800000], ["1s", 1000000],
+];
+const SHUTTER_FULL_STOPS = new Set([0, 1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 36, 39]);
 let _shutterAngleMode = false;
 
 function fmtShutterStep(idx) {
-  const us = SHUTTER_STEPS[idx | 0];
-  if (us === 0) return 'Auto';
-  if (_shutterAngleMode) return Math.round(us * 360 / 33333) + '°';
-  if (us >= 1000000) return (us / 1000000).toFixed(1) + 's';
-  return '1/' + Math.round(1000000 / us);
+  const entry = SHUTTER_SPEEDS[idx | 0];
+  if (!entry) return 'Auto';
+  if (_shutterAngleMode && entry[1] > 0) return Math.round(entry[1] * 360 / 33333) + '°';
+  return entry[0];
 }
 
 function _exposureToStep(us) {
   let best = 0, bestDist = Infinity;
-  for (let i = 0; i < SHUTTER_STEPS.length; i++) {
-    const d = Math.abs(SHUTTER_STEPS[i] - us);
+  for (let i = 0; i < SHUTTER_SPEEDS.length; i++) {
+    const d = Math.abs(SHUTTER_SPEEDS[i][1] - us);
     if (d < bestDist) { bestDist = d; best = i; }
   }
   return best;
@@ -1210,7 +1220,8 @@ function _exposureToStep(us) {
 
 function onShutterSlider(el) {
   const idx = parseInt(el.value, 10);
-  _ctrl.exposure_time = SHUTTER_STEPS[idx];
+  _ctrl.exposure_index = idx;
+  delete _ctrl.exposure_time;
   document.getElementById('ctrl-val-exposure').textContent = fmtShutterStep(idx);
   document.querySelectorAll('#shutter-presets .tl-preset').forEach((p, i) =>
     p.classList.toggle('active', i === idx));
@@ -1380,7 +1391,7 @@ async function resetCtrlDefaults() {
 function syncCtrlUI() {
   // Sliders + value labels
   // Exposure: discrete step slider
-  const expStep = _exposureToStep(_ctrl.exposure_time);
+  const expStep = _ctrl.exposure_index ?? _exposureToStep(_ctrl.exposure_time ?? 0);
   const expSl = document.getElementById('ctrl-sl-exposure');
   if (expSl) expSl.value = expStep;
   const expLbl = document.getElementById('ctrl-val-exposure');
