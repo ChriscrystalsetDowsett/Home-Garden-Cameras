@@ -127,9 +127,11 @@ def delete_snapshot(filename):
     if "/" in filename or ".." in filename:
         return jsonify({"ok": False}), 400
     path = SNAPSHOT_DIR / filename
-    if not path.exists():
+    thumb = SNAPSHOT_DIR / (path.stem + ".thumb.jpg")
+    if not path.exists() and not thumb.exists():
         return jsonify({"ok": False}), 404
-    path.unlink()
+    path.unlink(missing_ok=True)
+    thumb.unlink(missing_ok=True)
     return jsonify({"ok": True})
 
 
@@ -141,13 +143,19 @@ def gallery():
     with os.scandir(SNAPSHOT_DIR) as it:
         for entry in it:
             if entry.name.endswith(".thumb.jpg"):
-                st = entry.stat()
-                entries.append((st.st_mtime, entry.name.replace(".thumb.jpg", ".jpg"), st.st_size))
+                name = entry.name.replace(".thumb.jpg", ".jpg")
+                # Full-size photos are archived to bigpc nightly; the thumb
+                # stays behind as local history.
+                try:
+                    st = (SNAPSHOT_DIR / name).stat()
+                    local, size = True, st.st_size
+                except OSError:
+                    local, size = False, entry.stat().st_size
+                entries.append((entry.stat().st_mtime, name, size, local))
     entries.sort(key=lambda x: x[0], reverse=True)
     return jsonify([
-        {"filename": n, "size": s,
-         "has_thumb": True}
-        for _, n, s in entries[:100]
+        {"filename": n, "size": s, "has_thumb": True, "local": l}
+        for _, n, s, l in entries[:100]
     ])
 
 
@@ -254,12 +262,17 @@ def list_videos():
     with os.scandir(VIDEOS_DIR) as it:
         for entry in it:
             if entry.name.endswith(".thumb.jpg"):
-                st = entry.stat()
-                entries.append((st.st_mtime, entry.name.replace(".thumb.jpg", ".mp4"), st.st_size))
+                name = entry.name.replace(".thumb.jpg", ".mp4")
+                try:
+                    st = (VIDEOS_DIR / name).stat()
+                    local, size = True, st.st_size
+                except OSError:
+                    local, size = False, entry.stat().st_size
+                entries.append((entry.stat().st_mtime, name, size, local))
     entries.sort(key=lambda x: x[0], reverse=True)
     return jsonify([
-        {"filename": n, "size": s, "has_thumb": True}
-        for _, n, s in entries[:50]
+        {"filename": n, "size": s, "has_thumb": True, "local": l}
+        for _, n, s, l in entries[:50]
     ])
 
 
@@ -273,13 +286,21 @@ def delete_video(filename):
     if "/" in filename or ".." in filename:
         return jsonify({"ok": False}), 400
     path = VIDEOS_DIR / filename
-    if not path.exists():
+    thumb = VIDEOS_DIR / (path.stem + ".thumb.jpg")
+    if not path.exists() and not thumb.exists():
         return jsonify({"ok": False}), 404
-    path.unlink()
+    path.unlink(missing_ok=True)
+    thumb.unlink(missing_ok=True)
     return jsonify({"ok": True})
 
 
 # ── Camera controls ────────────────────────────────────────────────────────────
+
+@app.route("/api/camera_controls", methods=["GET"])
+def get_cam_controls():
+    with cam_ctrl_lock:
+        return jsonify(dict(cam_ctrl))
+
 
 @app.route("/api/camera_controls", methods=["POST"])
 def set_cam_controls():
