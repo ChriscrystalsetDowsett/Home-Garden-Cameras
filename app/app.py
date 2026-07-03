@@ -1,11 +1,12 @@
 """Flask application — all HTTP routes."""
 import os
+import time
 from pathlib import Path
 from PIL import Image
 
-from flask import Flask, Response, render_template, make_response, jsonify, request, send_from_directory, after_this_request
+from flask import Flask, Response, render_template, make_response, jsonify, request, redirect, send_from_directory, after_this_request
 
-from .config import SNAPSHOT_DIR, VIDEOS_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY, CAM_BACKEND, PI_NAME
+from .config import SNAPSHOT_DIR, VIDEOS_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY, CAM_BACKEND, PI_NAME, PHOTO_BASE_URL
 from .camera import camera, cam_ctrl, cam_ctrl_lock
 from .timelapse import timelapse, get_compile_status
 from .recorder import video_recorder, AUDIO_AVAILABLE, audio_streamer
@@ -42,7 +43,8 @@ def index():
     resp = make_response(render_template("index.html",
                                          audio_available=AUDIO_AVAILABLE,
                                          cam_backend=CAM_BACKEND,
-                                         pi_name=PI_NAME))
+                                         pi_name=PI_NAME,
+                                         photo_base_url=PHOTO_BASE_URL))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return resp
 
@@ -110,6 +112,14 @@ def snapshot():
 @app.route("/snapshots/<filename>")
 def serve_snapshot(filename):
     return send_from_directory(SNAPSHOT_DIR, filename)
+
+
+@app.route("/photo/<filename>")
+def serve_photo_local(filename):
+    path = SNAPSHOT_DIR / filename
+    if path.is_file():
+        return send_from_directory(SNAPSHOT_DIR, filename)
+    return redirect(f"https://media.chrisdowsett.com/media/{PI_NAME}/photos/{filename}")
 
 
 @app.route("/api/snapshot/<filename>", methods=["DELETE"])
@@ -312,7 +322,10 @@ def servo_status():
 
 @app.route("/api/stats")
 def stats():
-    return jsonify(get_stats())
+    s = get_stats()
+    age = time.time() - camera.output.last_write if camera.output.last_write else None
+    s["frame_age_s"] = round(age, 1) if age is not None else None
+    return jsonify(s)
 
 
 @app.route("/api/info")

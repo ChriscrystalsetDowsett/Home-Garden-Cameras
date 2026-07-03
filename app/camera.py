@@ -138,6 +138,7 @@ _WARMTH_NEUTRAL = int(CAM_CTRL_DEFAULTS["warmth"])
 class StreamOutput(io.BufferedIOBase):
     def __init__(self):
         self.frame      = None
+        self.last_write = 0.0
         self.condition  = threading.Condition()
         self.recorder   = None
         self._fps_lock  = threading.Lock()
@@ -154,7 +155,8 @@ class StreamOutput(io.BufferedIOBase):
         ) else buf
 
         with self.condition:
-            self.frame = displayed
+            self.frame      = displayed
+            self.last_write = time.time()
             self.condition.notify_all()
         if self.recorder:
             self.recorder.write(displayed)
@@ -711,7 +713,13 @@ class CameraManager:
             with self.output.condition:
                 self.output.condition.wait(timeout=3)
                 frame = self.output.frame
-            if not frame:
+                # If the capture loop is dead, self.frame is whatever was last
+                # written — possibly days old. Saving it silently produced two
+                # weeks of byte-identical "snapshots" (2026-06-17 → 07-02).
+                # Refuse rather than write a stale frame.
+                stale = (time.time() - self.output.last_write) > 10
+            if not frame or stale:
+                logging.error("capture: stream stalled (no fresh frame in 10s) — snapshot refused")
                 return None
             img = Image.open(io.BytesIO(frame))
             save_quality = quality

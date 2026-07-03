@@ -653,7 +653,7 @@ async function loadGallery() {
       files.forEach(f => {
         const a = document.createElement('a');
         a.className = 'gallery-item';
-        a.href = 'https://media.chrisdowsett.com/media/' + PI_NAME + '/photos/' + f.filename;
+        a.href = PHOTO_BASE_URL + '/' + f.filename;
         a.target = '_blank';
         a.title = f.filename;
         const img = document.createElement('img');
