@@ -150,6 +150,15 @@ def index():
     return resp
 
 
+@dashboard.route("/dashboard/v1")
+@_require_auth
+def index_v1():
+    """Archived pre-redesign dashboard, kept for before/after reference."""
+    resp = make_response(render_template("dashboard_v1.html", cameras=CAMERAS, tile_quality=TILE_QUALITY))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return resp
+
+
 # ── Quick-action API proxy (used by dashboard JS) ──────────────────────────────
 
 @dashboard.route(

@@ -128,6 +128,7 @@ function markOnline(img) {
   tile.classList.remove('offline');
   const dot = document.getElementById('tile-dot-' + tile.dataset.idx);
   if (dot) dot.classList.add('online');
+  _updateFleetPill();
 }
 
 function markOffline(img) {
@@ -136,6 +137,40 @@ function markOffline(img) {
   tile.classList.add('offline');
   const dot = document.getElementById('tile-dot-' + tile.dataset.idx);
   if (dot) dot.classList.remove('online');
+  _updateFleetPill();
+}
+
+/* ── App bar: fleet summary + clock; wall: promote-to-hero ─────────────────── */
+
+function _updateFleetPill() {
+  const pill = document.getElementById('fleet-pill');
+  const count = document.getElementById('fleet-count');
+  if (!pill || !count) return;
+  const tiles = document.querySelectorAll('.cam-tile[data-idx]');
+  const total = tiles.length;
+  let live = 0;
+  tiles.forEach(t => { if (!t.classList.contains('offline') &&
+    document.getElementById('tile-dot-' + t.dataset.idx)?.classList.contains('online')) live++; });
+  count.textContent = live + '/' + total + ' live';
+  pill.classList.toggle('all-live', live === total && total > 0);
+  pill.classList.toggle('degraded', live > 0 && live < total);
+  pill.classList.toggle('all-down', live === 0);
+}
+
+function _tickClock() {
+  const el = document.getElementById('app-clock');
+  if (!el) return;
+  el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+_tickClock();
+setInterval(_tickClock, 15000);
+
+function promoteTile(ev, btn) {
+  ev.stopPropagation();
+  const tile = btn.closest('.cam-tile');
+  if (!tile || tile.classList.contains('is-hero')) return;
+  document.querySelectorAll('.cam-tile.is-hero').forEach(t => t.classList.remove('is-hero'));
+  tile.classList.add('is-hero');
 }
 
 /* ── Drawer open / close ─────────────────────────────────────────────────────── */

@@ -20,6 +20,8 @@ button, .cam-tile { touch-action: manipulation; user-select: none; }
   --radius:   12px;
 }
 
+html, body { height: 100%; }
+
 body {
   background: var(--bg);
   background-image:
@@ -28,26 +30,28 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
   min-height: 100vh;
+  overflow: hidden;
 }
 
-.container {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 0 18px 48px;
+/* ── App shell ────────────────────────────────────────────────────────────── */
+
+.shell {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 
-/* ── Header ───────────────────────────────────────────────────────────────── */
-
-header {
+.app-bar {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 20px 0 18px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 24px;
   position: relative;
+  flex-shrink: 0;
 }
-header::after {
+.app-bar::after {
   content: '';
   position: absolute;
   bottom: -1px; left: 0; right: 0; height: 1px;
@@ -55,48 +59,98 @@ header::after {
   pointer-events: none;
 }
 
-.header-brand { display: flex; align-items: center; gap: 14px; }
+.header-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 
 .cam-icon {
-  width: 46px; height: 46px;
+  width: 38px; height: 38px;
   background: var(--green-dk);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 22px;
+  font-size: 18px;
   flex-shrink: 0;
 }
 
 .header-text h1 {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.4px;
   color: var(--green-lt);
+  white-space: nowrap;
 }
 .header-text p {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
-.back-link {
-  position: absolute;
-  right: 0;
+.app-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.fleet-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.fleet-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition: background 0.4s, box-shadow 0.4s;
+}
+.fleet-pill.all-live .fleet-dot {
+  background: var(--green);
+  box-shadow: 0 0 7px rgba(34,197,94,0.6);
+  animation: dot-pulse 3s ease-in-out infinite;
+}
+.fleet-pill.degraded .fleet-dot { background: var(--amber); box-shadow: 0 0 7px rgba(217,119,6,0.5); }
+.fleet-pill.all-down .fleet-dot { background: var(--red); }
+.fleet-pill.all-live { color: var(--green-lt); border-color: var(--green-dk); }
+
+.app-clock {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.app-nav { display: flex; gap: 8px; }
+.app-nav a {
   color: var(--muted);
   text-decoration: none;
-  font-size: 13px;
-  padding: 7px 14px;
+  font-size: 12px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 999px;
   white-space: nowrap;
   transition: color 0.15s, border-color 0.15s;
 }
-.back-link:hover { color: var(--green); border-color: var(--green-dk); }
+.app-nav a:hover { color: var(--green); border-color: var(--green-dk); }
 
-/* ── Camera grid ──────────────────────────────────────────────────────────── */
+/* ── Camera wall ──────────────────────────────────────────────────────────── */
+
+.wall {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 20px 18px;
+}
 
 .cam-grid {
+  height: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(405px, 1fr));
+  grid-template-columns: 2.2fr 1fr;
+  grid-template-rows: repeat(2, 1fr);
   gap: 14px;
 }
 
@@ -106,21 +160,21 @@ header::after {
   border-radius: var(--radius);
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.12s;
+  transition: border-color 0.2s, box-shadow 0.2s;
   position: relative;
+  min-height: 0;
 }
+.cam-tile.is-hero { grid-column: 1; grid-row: 1 / -1; }
 .cam-tile:hover {
   border-color: var(--green-md);
   box-shadow: 0 0 0 1px var(--green-dk), 0 6px 28px rgba(34,197,94,0.1);
-  transform: translateY(-1px);
 }
-.cam-tile:active { transform: translateY(0); }
 
-/* Stream area */
+/* Stream area fills the tile */
 .tile-stream-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: 100%;
   background: #000;
   overflow: hidden;
 }
@@ -154,8 +208,8 @@ header::after {
 /* Status badges (REC / TL) shown over the stream */
 .tile-badges {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  top: 10px;
+  left: 10px;
   display: flex;
   gap: 5px;
   pointer-events: none;
@@ -172,34 +226,45 @@ header::after {
 .badge-tl     { background: rgba(217,119,6,0.85);  color: #fff; }
 .badge-paused { background: rgba(75,85,99,0.85);   color: #fff; }
 
-/* Hover hint */
-.tile-hint {
+/* Promote-to-hero button (top right, non-hero tiles, desktop only) */
+.tile-promote {
   position: absolute;
-  inset: 0;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1.5px solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.85);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0);
-  color: rgba(255,255,255,0);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  transition: background 0.2s, color 0.2s;
-  pointer-events: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.15s, border-color 0.15s;
+  z-index: 4;
 }
-.cam-tile:hover .tile-hint {
-  background: rgba(0,0,0,0.3);
-  color: rgba(255,255,255,0.9);
+.cam-tile:hover .tile-promote { opacity: 1; }
+.tile-promote:hover {
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.34);
+  color: #fff;
 }
+.cam-tile.is-hero .tile-promote { display: none; }
 
-/* Footer bar */
+/* Footer overlay — gradient scrim over the bottom of the stream */
 .tile-footer {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  gap: 9px;
+  padding: 26px 14px 11px;
+  background: linear-gradient(180deg, transparent, rgba(4,10,4,0.82));
+  pointer-events: none;
 }
 .tile-name {
   font-size: 13px;
@@ -208,7 +273,26 @@ header::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
 }
+.tile-host {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.tile-open {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--green-lt);
+  opacity: 0;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+.cam-tile:hover .tile-open { opacity: 1; }
+
 .tile-dot {
   width: 8px;
   height: 8px;
@@ -238,6 +322,7 @@ header::after {
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   line-height: 1.8;
+  align-self: start;
 }
 .no-cameras code {
   background: var(--surface2);
@@ -283,6 +368,19 @@ header::after {
 }
 #drawer.open { transform: translateY(0); }
 
+/* On wide screens the drawer becomes a centered sheet, not a full-width strip */
+@media (min-width: 1100px) {
+  #drawer {
+    left: 50%;
+    right: auto;
+    width: 720px;
+    transform: translate(-50%, 100%);
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+  }
+  #drawer.open { transform: translate(-50%, 0); }
+}
+
 /* Drag handle */
 .drawer-handle {
   width: 36px;
@@ -316,17 +414,6 @@ header::after {
   gap: 10px;
   flex-shrink: 0;
 }
-.full-link {
-  font-size: 12px;
-  color: var(--muted);
-  text-decoration: none;
-  padding: 5px 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s;
-}
-.full-link:hover { color: var(--green); border-color: var(--green-dk); }
 
 .drawer-close {
   background: none;
@@ -509,10 +596,14 @@ header::after {
    creates a new containing block, trapping any fixed children inside it. */
 body.drawer-fake-fs #drawer {
   top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: auto !important;
   max-height: none !important;
   height: 100dvh;
   border-radius: 0;
   overflow: hidden;
+  transform: none !important;
 }
 /* Hide everything except the stream so it fills the drawer */
 body.drawer-fake-fs .drawer-handle,
@@ -600,34 +691,41 @@ body.drawer-fake-fs .drawer-stream-wrap {
 
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 
-/* Large tablet / small laptop — 2 columns */
-@media (max-width: 960px) {
-  .cam-grid { grid-template-columns: repeat(2, 1fr); }
-  .container { padding: 0 14px 36px; }
+/* Below the desktop wall breakpoint: scrolling page, tiles keep 16:9 */
+@media (max-width: 1099px) {
+  body { overflow: auto; }
+  .shell { height: auto; min-height: 100dvh; }
+  .wall { padding: 14px 16px 36px; }
+  .cam-grid {
+    height: auto;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: none;
+  }
+  .cam-tile.is-hero { grid-column: 1 / -1; grid-row: auto; }
+  .tile-stream-wrap { height: auto; aspect-ratio: 16 / 9; }
+  .tile-promote { display: none; }
 }
 
-/* Tablet portrait — single column, larger touch targets */
+/* Tablet portrait — single column */
 @media (max-width: 640px) {
   .cam-grid { grid-template-columns: 1fr; }
-  /* Switch header from centered to spaced so back-link doesn't overlap the title */
-  header { justify-content: space-between; }
-  .back-link { position: static; font-size: 12px; padding: 5px 10px; }
+  .app-clock { display: none; }
+  .app-nav a { font-size: 11px; padding: 5px 9px; }
   .header-text h1 { font-size: 15px; }
   .drawer-actions { gap: 8px; }
   .action-btn { font-size: 13px; padding: 12px 10px; min-width: 80px; }
-  /* Header link hidden — the in-drawer button takes its place */
-  .full-link { display: none; }
   .drawer-full-row { display: flex; }
   .drawer-full-wrap { display: block; }
 }
 
-/* Phone — compact layout, full-width drawer */
+/* Phone — compact layout */
 @media (max-width: 420px) {
-  .container { padding: 0 10px 24px; }
+  .wall { padding: 10px 10px 24px; }
   .cam-grid { gap: 10px; }
   .header-text h1 { font-size: 14px; }
   .header-text p { display: none; }
-  .back-link { padding: 5px 9px; }
+  .fleet-pill { padding: 5px 9px; font-size: 11px; }
+  .app-nav a:first-child { display: none; }
   .drawer-stream-wrap { max-height: 36vh; }
   .action-btn { padding: 11px 8px; gap: 5px; }
 }
