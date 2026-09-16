@@ -13,6 +13,10 @@ with open(_cfg_path) as _f:
 SERVER_HOST = _cfg["server"]["host"]
 SERVER_PORT = int(_cfg["server"]["port"])
 PI_NAME     = _cfg["server"].get("pi_name", "unknown")
+PHOTO_BASE_URL = _cfg["server"].get(
+    "photo_base_url",
+    f"https://media.chrisdowsett.com/media/{PI_NAME}/photos",
+)
 
 # ── Data paths ────────────────────────────────────────────────────────────────
 SNAPSHOT_DIR = (PROJECT_ROOT / _cfg["paths"]["photos"]).resolve()

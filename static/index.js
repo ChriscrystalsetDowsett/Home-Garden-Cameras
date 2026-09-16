@@ -655,9 +655,8 @@ async function loadGallery() {
         const a = document.createElement('a');
         a.className = 'gallery-item';
         // Fresh photos are still local; after the nightly sync only the
-        // archived copy on media.chrisdowsett.com has the full-size file.
-        a.href = f.local ? ('/snapshots/' + f.filename)
-                         : ('https://media.chrisdowsett.com/media/' + PI_NAME + '/photos/' + f.filename);
+        // archived copy on the media server has the full-size file.
+        a.href = f.local ? ('/snapshots/' + f.filename) : (PHOTO_BASE_URL + '/' + f.filename);
         a.target = '_blank';
         a.title = f.filename;
         const img = document.createElement('img');
