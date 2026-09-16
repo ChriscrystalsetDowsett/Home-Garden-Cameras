@@ -145,7 +145,9 @@ def _cam_base(idx):
 @dashboard.route("/dashboard")
 @_require_auth
 def index():
-    resp = make_response(render_template("dashboard.html", cameras=CAMERAS, tile_quality=TILE_QUALITY))
+    hero_idx = next((i for i, c in enumerate(CAMERAS) if c.get("hero")), 0)
+    resp = make_response(render_template("dashboard.html", cameras=CAMERAS,
+                                         tile_quality=TILE_QUALITY, hero_idx=hero_idx))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return resp
 

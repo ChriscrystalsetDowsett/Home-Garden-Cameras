@@ -164,7 +164,7 @@ body {
   position: relative;
   min-height: 0;
 }
-.cam-tile.is-hero { grid-column: 1; grid-row: 1 / -1; }
+.cam-tile.is-hero { grid-column: 1; grid-row: 1 / -1; order: -1; }
 .cam-tile:hover {
   border-color: var(--green-md);
   box-shadow: 0 0 0 1px var(--green-dk), 0 6px 28px rgba(34,197,94,0.1);

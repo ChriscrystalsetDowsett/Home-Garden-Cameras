@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Garden Cams">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
 <title>Home Garden Cameras</title>
-<link rel="stylesheet" href="/static/dashboard.css?v=7">
+<link rel="stylesheet" href="/static/dashboard.css?v=8">
 </head>
 <body>
 
@@ -39,7 +39,7 @@
   <main class="wall">
     <div class="cam-grid" id="cam-grid">
       {% for cam in cameras %}
-      <div class="cam-tile{{ ' is-hero' if loop.index0 == 0 else '' }}"
+      <div class="cam-tile{{ ' is-hero' if loop.index0 == hero_idx else '' }}"
            data-idx="{{ loop.index0 }}"
            data-name="{{ cam.name | e }}"
            data-full-url="/camera/{{ loop.index0 }}/"
