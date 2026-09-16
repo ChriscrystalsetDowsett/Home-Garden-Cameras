@@ -1,12 +1,31 @@
-"""Flask application — all HTTP routes."""
+"""Flask application — all HTTP routes.
+
+v2 additions vs v1:
+- Bearer-token auth on all mutating verbs (with loopback bypass so cron
+  keeps working). See app/auth.py.
+- CORS restricted to a whitelist (settings.yaml → server.allowed_origins).
+- Single source of truth for PHOTO_BASE_URL — no hardcoded fallback.
+- Disk-space guard on /api/snapshot (507 if free < 5%).
+- GET /api/health for watchdogs and external dashboards.
+- Machine-readable error responses: {ok: false, error: CODE, message: ...}.
+- Rotating file logs under data/logs/app.log.
+"""
+import logging
 import os
+import shutil
 import time
 from pathlib import Path
 from PIL import Image
 
-from flask import Flask, Response, render_template, make_response, jsonify, request, redirect, send_from_directory, after_this_request
+from flask import (
+    Flask, Response, render_template, make_response, jsonify, request,
+    redirect, send_from_directory,
+)
 
-from .config import SNAPSHOT_DIR, VIDEOS_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY, CAM_BACKEND, PI_NAME, PHOTO_BASE_URL
+from .config import (
+    SNAPSHOT_DIR, VIDEOS_DIR, LOG_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY,
+    CAM_BACKEND, PI_NAME, PHOTO_BASE_URL, API_TOKEN, ALLOWED_ORIGINS,
+)
 from .camera import camera, cam_ctrl, cam_ctrl_lock
 from .timelapse import timelapse, get_compile_status
 from .recorder import video_recorder, AUDIO_AVAILABLE, audio_streamer
@@ -14,6 +33,14 @@ from .stats import get_stats, get_pi_info
 from .dashboard import dashboard as dashboard_bp
 from .servo import servo
 from . import scheduler
+from . import auth as auth_mod
+from . import logs as logs_mod
+
+
+# ── Logging (rotating file + stderr) ───────────────────────────────────────────
+logs_mod.configure(LOG_DIR)
+_log = logging.getLogger(__name__)
+
 
 # Wire the recorder into the camera stream so it captures what the user sees
 camera.output.recorder = video_recorder
@@ -25,37 +52,76 @@ app = Flask(
     static_folder=str(Path(__file__).parent.parent / "static"),
 )
 app.secret_key = SECRET_KEY
+app.config["API_TOKEN"] = API_TOKEN
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.register_blueprint(dashboard_bp)
 
 
+# ── Auth guard on every mutating request ──────────────────────────────────────
+app.before_request(auth_mod.before_request_guard)
+
+
+# ── CORS — whitelist (empty list = same-origin only) ──────────────────────────
 @app.after_request
 def _cors(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    origin = request.headers.get("Origin")
+    if origin and ALLOWED_ORIGINS and origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers.setdefault("Vary", "Origin")
     return response
+
+
+# ── Health check (watchdog target) ─────────────────────────────────────────────
+DISK_FREE_REFUSAL_PCT = 5.0   # /api/snapshot returns 507 below this
+
+
+def _disk_free_pct(path):
+    try:
+        du = shutil.disk_usage(path)
+        return (du.free / du.total) * 100.0
+    except OSError:
+        return None
+
+
+@app.route("/api/health")
+def api_health():
+    frame_age = None
+    if camera.output.last_write:
+        frame_age = round(time.time() - camera.output.last_write, 2)
+    live = frame_age is not None and frame_age < 10
+    free_pct = _disk_free_pct(SNAPSHOT_DIR)
+    return jsonify({
+        "status": "ok",
+        "camera": "live" if live else ("stalled" if frame_age is not None else "starting"),
+        "backend": CAM_BACKEND,
+        "resolution": camera.res_key,
+        "frame_age_s": frame_age,
+        "disk_free_pct": round(free_pct, 1) if free_pct is not None else None,
+        "audio_available": AUDIO_AVAILABLE,
+    })
 
 
 # ── Stream ─────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
-    resp = make_response(render_template("index.html",
-                                         audio_available=AUDIO_AVAILABLE,
-                                         cam_backend=CAM_BACKEND,
-                                         pi_name=PI_NAME,
-                                         photo_base_url=PHOTO_BASE_URL))
+    resp = make_response(render_template(
+        "index.html",
+        audio_available=AUDIO_AVAILABLE,
+        cam_backend=CAM_BACKEND,
+        pi_name=PI_NAME,
+        photo_base_url=PHOTO_BASE_URL,
+    ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return resp
 
 
 @app.route("/api/frame")
 def api_frame():
-    """Return the current JPEG frame (pull-based streaming).
-
-    Served at STREAM_JPEG_QUALITY (see settings.yaml) so the live feed uses
-    less bandwidth.  Photos, video, and timelapse use the full-quality buffer.
-    """
     if not camera.enabled:
         return "", 503
     frame = camera.get_stream_frame()
@@ -83,30 +149,42 @@ def camera_enabled_set():
 
 @app.route("/api/resolution", methods=["POST"])
 def set_resolution():
-    res = request.json.get("resolution")
+    res = (request.json or {}).get("resolution")
     ok = camera.set_resolution(res)
     return jsonify({"ok": ok, "resolution": camera.res_key})
 
 
 # ── Snapshot ───────────────────────────────────────────────────────────────────
 
+def _err(code, message, status=400):
+    return jsonify({"ok": False, "error": code, "message": message}), status
+
+
 @app.route("/api/snapshot", methods=["POST"])
 def snapshot():
-    data        = request.json or {}
-    prefix      = data.get("label", "Photo")
-    filter_name = data.get("filter", "none")
-    quality     = int(data.get("quality", 85))
+    free_pct = _disk_free_pct(SNAPSHOT_DIR)
+    if free_pct is not None and free_pct < DISK_FREE_REFUSAL_PCT:
+        _log.warning("snapshot refused — disk free %.1f%% < %.1f%%",
+                     free_pct, DISK_FREE_REFUSAL_PCT)
+        return _err("DISK_FULL", f"Disk free {free_pct:.1f}% below refusal threshold", 507)
+
+    payload     = request.json or {}
+    prefix      = payload.get("label", "Photo")
+    filter_name = payload.get("filter", "none")
+    quality     = int(payload.get("quality", 85))
     filename    = camera.capture(prefix=prefix, filter_name=filter_name, quality=quality)
-    if filename:
-        try:
-            thumb_path = SNAPSHOT_DIR / (Path(filename).stem + '.thumb.jpg')
-            img = Image.open(SNAPSHOT_DIR / filename)
-            img.thumbnail((400, 300))
-            img.save(thumb_path, 'JPEG', quality=75)
-        except Exception:
-            pass
-        return jsonify({"ok": True, "filename": filename})
-    return jsonify({"ok": False}), 500
+    if not filename:
+        return _err("CAPTURE_FAILED", "camera returned no frame", 500)
+
+    # Thumbnail sidecar — best-effort; contract requires the primary file only.
+    try:
+        thumb_path = SNAPSHOT_DIR / (Path(filename).stem + ".thumb.jpg")
+        img = Image.open(SNAPSHOT_DIR / filename)
+        img.thumbnail((400, 300))
+        img.save(thumb_path, "JPEG", quality=75)
+    except Exception as e:
+        _log.debug("thumbnail generation failed for %s: %s", filename, e)
+    return jsonify({"ok": True, "filename": filename})
 
 
 @app.route("/snapshots/<filename>")
@@ -119,17 +197,17 @@ def serve_photo_local(filename):
     path = SNAPSHOT_DIR / filename
     if path.is_file():
         return send_from_directory(SNAPSHOT_DIR, filename)
-    return redirect(f"https://media.chrisdowsett.com/media/{PI_NAME}/photos/{filename}")
+    return redirect(f"{PHOTO_BASE_URL}/{filename}")
 
 
 @app.route("/api/snapshot/<filename>", methods=["DELETE"])
 def delete_snapshot(filename):
     if "/" in filename or ".." in filename:
-        return jsonify({"ok": False}), 400
+        return _err("INVALID_FILENAME", "filename may not contain / or ..", 400)
     path = SNAPSHOT_DIR / filename
     thumb = SNAPSHOT_DIR / (path.stem + ".thumb.jpg")
     if not path.exists() and not thumb.exists():
-        return jsonify({"ok": False}), 404
+        return _err("NOT_FOUND", "photo does not exist", 404)
     path.unlink(missing_ok=True)
     thumb.unlink(missing_ok=True)
     return jsonify({"ok": True})
@@ -144,8 +222,6 @@ def gallery():
         for entry in it:
             if entry.name.endswith(".thumb.jpg"):
                 name = entry.name.replace(".thumb.jpg", ".jpg")
-                # Full-size photos are archived to bigpc nightly; the thumb
-                # stays behind as local history.
                 try:
                     st = (SNAPSHOT_DIR / name).stat()
                     local, size = True, st.st_size
@@ -163,8 +239,9 @@ def gallery():
 
 @app.route("/api/timelapse/start", methods=["POST"])
 def tl_start():
-    interval = request.json.get("interval", 5)
-    duration = request.json.get("duration", 0)
+    payload  = request.json or {}
+    interval = payload.get("interval", 5)
+    duration = payload.get("duration", 0)
     timelapse.start(interval, duration)
     return jsonify({"ok": True, **timelapse.status()})
 
@@ -189,11 +266,6 @@ def tl_compile_status():
 
 @app.route("/api/audio/stream")
 def audio_stream_aac():
-    """Stream live audio as AAC/ADTS — the Safari-compatible fallback format.
-
-    ADTS is self-synchronising and supported natively by Safari's <audio> element.
-    Chrome and Firefox also support it, so this endpoint works everywhere.
-    """
     if not AUDIO_AVAILABLE:
         return "", 503
 
@@ -209,11 +281,6 @@ def audio_stream_aac():
 
 @app.route("/api/audio/stream/raw")
 def audio_stream_raw():
-    """Stream live audio as raw s16le PCM at 16 kHz for Web Audio API playback.
-
-    No container overhead — data flows within milliseconds of capture,
-    giving far lower latency than the Ogg endpoint.
-    """
     if not AUDIO_AVAILABLE:
         return "", 503
 
@@ -236,10 +303,10 @@ def audio_stream_raw():
 
 @app.route("/api/record/start", methods=["POST"])
 def record_start():
-    data  = request.json or {}
-    crf   = int(data.get("quality", 23))
-    audio = bool(data.get("audio", False))
-    ok    = video_recorder.start(crf=crf, audio=audio)
+    payload = request.json or {}
+    crf     = int(payload.get("quality", 23))
+    audio   = bool(payload.get("audio", False))
+    ok      = video_recorder.start(crf=crf, audio=audio)
     return jsonify({"ok": ok, **video_recorder.status()})
 
 
@@ -284,11 +351,11 @@ def serve_video(filename):
 @app.route("/api/videos/<filename>", methods=["DELETE"])
 def delete_video(filename):
     if "/" in filename or ".." in filename:
-        return jsonify({"ok": False}), 400
+        return _err("INVALID_FILENAME", "filename may not contain / or ..", 400)
     path = VIDEOS_DIR / filename
     thumb = VIDEOS_DIR / (path.stem + ".thumb.jpg")
     if not path.exists() and not thumb.exists():
-        return jsonify({"ok": False}), 404
+        return _err("NOT_FOUND", "video does not exist", 404)
     path.unlink(missing_ok=True)
     thumb.unlink(missing_ok=True)
     return jsonify({"ok": True})
@@ -304,9 +371,9 @@ def get_cam_controls():
 
 @app.route("/api/camera_controls", methods=["POST"])
 def set_cam_controls():
-    data = request.json or {}
+    payload = request.json or {}
     with cam_ctrl_lock:
-        for k, v in data.items():
+        for k, v in payload.items():
             if k in CAM_CTRL_DEFAULTS:
                 cam_ctrl[k] = v
         current = dict(cam_ctrl)
@@ -323,8 +390,8 @@ def cam_ctrl_defaults():
 
 @app.route("/api/servo/move", methods=["POST"])
 def servo_move():
-    data = request.json or {}
-    servo.move(float(data.get("pan", 0.0)), float(data.get("tilt", 0.0)))
+    payload = request.json or {}
+    servo.move(float(payload.get("pan", 0.0)), float(payload.get("tilt", 0.0)))
     return jsonify({"ok": True})
 
 

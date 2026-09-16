@@ -6,6 +6,16 @@ button, .btn, .res-opt, .tl-preset, .film-card, .flip-btn, .section-card > butto
   user-select: none;
 }
 
+/* ── z-index scale ──────────────────────────────────────────────────────────
+   2   .feed-overlay          status chips on the stream
+   3   feed action buttons    (snapshot/fullscreen overlays, bottom corners)
+   5   .hub-link              header back-link
+   10  .fs-quick-btns         fullscreen quick actions, gallery delete (×)
+   15  #servo-joystick        swipe-to-pan overlay
+   20  dropdowns, .fs-close-btn
+   200 .toast
+   500 body.ios-fs #feed-wrap fake-fullscreen feed (must beat everything)
+   New layers must slot into this ladder — don't invent 9999. */
 :root {
   --bg:       #070d07;
   --surface:  #0d180d;

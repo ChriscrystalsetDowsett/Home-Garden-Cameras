@@ -63,7 +63,7 @@
 - /etc/systemd/system/greenhouse-monitor.service — show diff, get confirmation
 - /etc/systemd/system/motor-control.service — show diff, get confirmation
 - crontab — show proposed change, get confirmation
-  (rsync at 02:15; greenhouse snapshots at 07:00 10:00 13:00 16:00 19:00)
+  (rsync at 02:15; greenhouse snapshots every 3 min: `*/3 6-20 * * *` + `0-30/3 21 * * *`)
 - Any file outside the app directories without explicit instruction
 
 ## Checking in after changes
@@ -78,7 +78,8 @@ Report all three results before finishing.
 - bigpc has SSH access to this Pi via Tailscale (100.75.224.125)
 - Claude Code runs on bigpc and SSHes in as needed
 - Ollama runs on bigpc at http://172.17.0.1:11434 (NOT localhost)
-- Photos rsync nightly from this Pi to bigpc at 02:15 (via /home/chris/sync-to-bigpc.sh)
+- Photos rsync nightly from this Pi to bigpc at 02:15
+  (via /home/chris/dev/apps/home-garden-cameras/scripts/sync-to-bigpc.sh)
 
 ---
 

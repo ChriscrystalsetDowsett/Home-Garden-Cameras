@@ -11,43 +11,43 @@
       </div>
     </button>
     <div class="section-body" id="stats-body">
-      <div class="gauges-row">
-        <div class="gauge-card">
-          <svg class="gauge-svg" viewBox="0 0 100 100">
+      <div class="gauges-row" role="group" aria-label="System resource gauges">
+        <div class="gauge-card" role="img" aria-labelledby="gauge-cpu-label" aria-live="polite">
+          <svg class="gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
             <circle class="gauge-track" cx="50" cy="50" r="38"/>
             <circle class="gauge-arc" id="arc-cpu" cx="50" cy="50" r="38"/>
             <text class="gauge-val" id="gv-cpu" x="50" y="49">0</text>
             <text class="gauge-unit" x="50" y="63">%</text>
           </svg>
-          <span class="gauge-title">CPU</span>
+          <span class="gauge-title" id="gauge-cpu-label">CPU</span>
         </div>
-        <div class="gauge-card">
-          <svg class="gauge-svg" viewBox="0 0 100 100">
+        <div class="gauge-card" role="img" aria-labelledby="gauge-ram-label" aria-live="polite">
+          <svg class="gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
             <circle class="gauge-track" cx="50" cy="50" r="38"/>
             <circle class="gauge-arc" id="arc-ram" cx="50" cy="50" r="38"/>
             <text class="gauge-val" id="gv-ram" x="50" y="49">0</text>
             <text class="gauge-unit" x="50" y="63">%</text>
           </svg>
-          <span class="gauge-title">RAM</span>
+          <span class="gauge-title" id="gauge-ram-label">RAM</span>
           <span class="gauge-sub" id="ic-ram-usage">— / —</span>
         </div>
-        <div class="gauge-card">
-          <svg class="gauge-svg" viewBox="0 0 100 100">
+        <div class="gauge-card" role="img" aria-labelledby="gauge-temp-label" aria-live="polite">
+          <svg class="gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
             <circle class="gauge-track" cx="50" cy="50" r="38"/>
             <circle class="gauge-arc" id="arc-temp" cx="50" cy="50" r="38"/>
             <text class="gauge-val" id="gv-temp" x="50" y="49">&mdash;</text>
             <text class="gauge-unit" x="50" y="63">&deg;C</text>
           </svg>
-          <span class="gauge-title">Temp</span>
+          <span class="gauge-title" id="gauge-temp-label">Temp</span>
         </div>
-        <div class="gauge-card">
-          <svg class="gauge-svg" viewBox="0 0 100 100">
+        <div class="gauge-card" role="img" aria-labelledby="gauge-disk-label" aria-live="polite">
+          <svg class="gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
             <circle class="gauge-track" cx="50" cy="50" r="38"/>
             <circle class="gauge-arc" id="arc-disk" cx="50" cy="50" r="38"/>
             <text class="gauge-val" id="gv-disk" x="50" y="49">0</text>
             <text class="gauge-unit" x="50" y="63">%</text>
           </svg>
-          <span class="gauge-title">Disk</span>
+          <span class="gauge-title" id="gauge-disk-label">Disk</span>
           <div class="gauge-disk-chips">
             <div class="gauge-disk-chip">
               <span class="gauge-disk-lbl">Used</span>

@@ -9,7 +9,8 @@ from functools import wraps
 from flask import Blueprint, Response, make_response, jsonify, render_template, request, \
                   session, redirect, stream_with_context
 
-from .config import CAMERAS, TILE_QUALITY, DASHBOARD_PASSWORD
+from .config import CAMERAS, TILE_QUALITY, DASHBOARD_PASSWORD, API_TOKEN
+from .auth import COOKIE_NAME
 
 dashboard = Blueprint("dashboard", __name__)
 
@@ -110,7 +111,20 @@ def login():
         pw = request.form.get("password", "")
         if hmac.compare_digest(pw, DASHBOARD_PASSWORD):
             session["dashboard_authed"] = True
-            return redirect("/dashboard")
+            resp = redirect("/dashboard")
+            # Carry the local API_TOKEN so subsequent same-origin fetches to
+            # mutating routes (POST/DELETE) pass the auth guard. HttpOnly
+            # so JS can't read it; SameSite=Lax so top-level navigations
+            # from the same site keep the cookie.
+            if API_TOKEN:
+                resp.set_cookie(
+                    COOKIE_NAME, API_TOKEN,
+                    max_age=30 * 24 * 3600,
+                    httponly=True,
+                    samesite="Lax",
+                    secure=request.is_secure,
+                )
+            return resp
         error = '<div class="err">Incorrect password — try again.</div>'
     return _LOGIN_PAGE.replace("{error}", error), 200, {"Content-Type": "text/html; charset=utf-8"}
 
@@ -118,7 +132,9 @@ def login():
 @dashboard.route("/dashboard/logout")
 def logout():
     session.pop("dashboard_authed", None)
-    return redirect("/dashboard/login")
+    resp = redirect("/dashboard/login")
+    resp.delete_cookie(COOKIE_NAME)
+    return resp
 
 
 _API_TIMEOUT    = 8    # seconds for regular JSON API calls
@@ -259,6 +275,14 @@ def _proxy(idx, path):
     fwd_headers = {}
     if request.content_type:
         fwd_headers["Content-Type"] = request.content_type
+
+    # Forward a Bearer token when the target Pi has one configured.
+    # Each camera in settings.yaml → cameras[] may declare `api_token: ...`;
+    # without it the remote Pi's auth guard will reject mutating verbs.
+    cam_cfg   = CAMERAS[idx] if 0 <= idx < len(CAMERAS) else {}
+    cam_token = cam_cfg.get("api_token", "")
+    if cam_token and request.method in ("POST", "DELETE", "PUT", "PATCH"):
+        fwd_headers["Authorization"] = f"Bearer {cam_token}"
 
     # Pull-based MJPEG stream — fetches the latest frame on each tick.
     # This avoids frame-queue buildup that causes lag over the internet.

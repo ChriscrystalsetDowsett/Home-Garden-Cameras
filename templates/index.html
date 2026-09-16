@@ -8,7 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="Garden Cams">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
 <title>Home Garden Cameras</title>
-<link rel="stylesheet" href="/static/index.css?v=7">
+<!-- CSS/JS ?v= must be bumped together — see CLAUDE.md "Static asset cache-busting". -->
+<link rel="stylesheet" href="/static/index.css?v=13">
 </head>
 <body>
 <div class="container">
@@ -285,6 +286,6 @@
 <div class="toast" id="toast"></div>
 
 <script>const PI_NAME = "{{ pi_name }}"; const PHOTO_BASE_URL = "{{ photo_base_url }}";</script>
-<script src="/static/index.js?v=12"></script>
+<script src="/static/index.js?v=13"></script>
 </body>
 </html>

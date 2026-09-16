@@ -37,6 +37,22 @@ let   snapFilter   = 'none';
 let   snapQuality  = 95;
 let   camEnabled   = true;
 
+// ── Static SVG icons ───────────────────────────────────────────────────────────
+// innerHTML policy: assigning innerHTML is allowed ONLY with the fully static
+// constants below (or other fully static literals). Anything containing runtime
+// data — API responses, filenames, user input — must be built with
+// createElement/textContent instead (see loadGallery/renderStats for the pattern).
+const SVG_STOP_10      = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>';
+const SVG_STOP_11      = '<svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>';
+const SVG_STOP_32      = '<svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>';
+const SVG_CAMCORDER_36 = '<svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M2 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8z"/><path d="M16 10.5 22 7v10l-6-3.5V10.5z"/></svg>';
+const SVG_CLOCK_36     = '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 15.5"/></svg>';
+const SVG_CLOCK_14     = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>';
+const SVG_CAMERA_15    = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="4" width="14" height="10" rx="2"/><circle cx="8" cy="9" r="2.5"/><path d="M5 4l1.5-2h3L11 4"/></svg>';
+const SVG_PLAY_30      = '<svg width="30" height="30" viewBox="0 0 24 24" fill="rgba(255,255,255,0.9)"><path d="M8 5v14l11-7z"/></svg>';
+const SVG_REC_DOT_13   = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg>';
+const SVG_MIC_13       = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>';
+
 // Timelapse presets
 const TL_INTERVAL_S    = [1, 5, 10, 30, 60, 300, 900, 3600];
 const TL_INTERVAL_LBLS = ['1s','5s','10s','30s','1m','5m','15m','1h'];
@@ -86,7 +102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const startBtn = document.getElementById('tl-start-btn');
       startBtn.className = 'btn btn-danger';
       startBtn.style.cssText = 'width:100%;justify-content:center';
-      startBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg> Stop Timelapse';
+      startBtn.innerHTML = SVG_STOP_10 + ' Stop Timelapse';
       _showTLRunning(d.duration > 0);
       _tlPollMs    = Math.max(1000, Math.min(30000, d.interval * 250));
       tlPollTimer  = setInterval(pollTL, _tlPollMs);
@@ -111,7 +127,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const s  = Math.floor((Date.now() - recordStart) / 1000);
         const mm = String(Math.floor(s / 60)).padStart(2, '0');
         const ss = String(s % 60).padStart(2, '0');
-        btn.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg> ' + mm + ':' + ss;
+        btn.innerHTML = SVG_STOP_10 + ' ' + mm + ':' + ss;
       }, 500);
     }
   } catch (_) {}
@@ -198,20 +214,20 @@ function updateFSQuickBtns() {
   if (!recBtn || !tlBtn) return;
   if (recording) {
     recBtn.classList.add('active');
-    recBtn.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>';
+    recBtn.innerHTML = SVG_STOP_32;
     recBtn.title = 'Stop Recording';
   } else {
     recBtn.classList.remove('active');
-    recBtn.innerHTML = '<svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M2 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8z"/><path d="M16 10.5 22 7v10l-6-3.5V10.5z"/></svg>';
+    recBtn.innerHTML = SVG_CAMCORDER_36;
     recBtn.title = 'Record';
   }
   if (tlRunning) {
     tlBtn.classList.add('active');
-    tlBtn.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>';
+    tlBtn.innerHTML = SVG_STOP_32;
     tlBtn.title = 'Stop Timelapse';
   } else {
     tlBtn.classList.remove('active');
-    tlBtn.innerHTML = '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 15.5"/></svg>';
+    tlBtn.innerHTML = SVG_CLOCK_36;
     tlBtn.title = 'Timelapse';
   }
 }
@@ -545,7 +561,7 @@ function setSnapQuality(btn) {
 async function doTakeSnapshot() {
   const btn = document.getElementById('snap-take-btn');
   btn.disabled = true;
-  btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="4" width="14" height="10" rx="2"/><circle cx="8" cy="9" r="2.5"/><path d="M5 4l1.5-2h3L11 4"/></svg> Capturing\u2026`;
+  btn.innerHTML = SVG_CAMERA_15 + ' Capturing\u2026';
   try {
     const r = await fetch('/api/snapshot', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -562,7 +578,7 @@ async function doTakeSnapshot() {
     toast('Request failed', 'error');
   }
   btn.disabled = false;
-  btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="4" width="14" height="10" rx="2"/><circle cx="8" cy="9" r="2.5"/><path d="M5 4l1.5-2h3L11 4"/></svg> Take Photo`;
+  btn.innerHTML = SVG_CAMERA_15 + ' Take Photo';
 }
 
 // ── Videos gallery ─────────────────────────────────────────────────────────────
@@ -578,7 +594,7 @@ async function loadVideos() {
     if (files.length === 0) { section.style.display = 'none'; return; }
     section.style.display = '';
     count.textContent = '— ' + files.length + ' video' + (files.length !== 1 ? 's' : '');
-    grid.innerHTML = '';
+    grid.textContent = '';
     files.forEach(f => {
       const a = document.createElement('a');
       a.className = 'gallery-item video-item';
@@ -603,7 +619,7 @@ async function loadVideos() {
 
       const play = document.createElement('div');
       play.className = 'video-play';
-      play.innerHTML = '<svg width="30" height="30" viewBox="0 0 24 24" fill="rgba(255,255,255,0.9)"><path d="M8 5v14l11-7z"/></svg>';
+      play.innerHTML = SVG_PLAY_30;
       a.appendChild(play);
 
       const isTimelapse = f.filename.toLowerCase().startsWith('timelapse');
@@ -622,7 +638,7 @@ async function loadVideos() {
       const del = document.createElement('button');
       del.className = 'gallery-del';
       del.title = 'Delete';
-      del.innerHTML = '&times;';
+      del.textContent = '×';
       del.onclick = e => deleteVideo(f.filename, e);
       a.appendChild(del);
 
@@ -648,9 +664,13 @@ async function loadGallery() {
     _photoCount = files.length;
     updateGalleryBarCount();
     if (files.length === 0) {
-      grid.innerHTML = '<div class="gallery-empty">No snapshots yet</div>';
+      grid.textContent = '';
+      const empty = document.createElement('div');
+      empty.className = 'gallery-empty';
+      empty.textContent = 'No snapshots yet';
+      grid.appendChild(empty);
     } else {
-      grid.innerHTML = '';
+      grid.textContent = '';
       files.forEach(f => {
         const a = document.createElement('a');
         a.className = 'gallery-item';
@@ -668,7 +688,7 @@ async function loadGallery() {
         const del = document.createElement('button');
         del.className = 'gallery-del';
         del.title = 'Delete';
-        del.innerHTML = '&times;';
+        del.textContent = '×';
         del.onclick = e => deleteSnapshot(f.filename, e);
         a.appendChild(del);
 
@@ -750,7 +770,7 @@ async function startRecording() {
     const s  = Math.floor((Date.now() - recordStart) / 1000);
     const mm = String(Math.floor(s / 60)).padStart(2, '0');
     const ss = String(s % 60).padStart(2, '0');
-    btn.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg> ' + mm + ':' + ss;
+    btn.innerHTML = SVG_STOP_10 + ' ' + mm + ':' + ss;
   }, 500);
   updateFSQuickBtns();
 }
@@ -763,7 +783,7 @@ async function stopRecording() {
   document.getElementById('mic-btn').disabled = false;
   const btn = document.getElementById('record-btn');
   btn.className = 'btn btn-rec';
-  btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg> Record';
+  btn.innerHTML = SVG_REC_DOT_13 + ' Record';
   if (d.filename && d.audio_ok === false && recAudio) {
     toast('\u2713 Recording saved (no audio captured)', 'error');
   } else if (d.filename) {
@@ -836,7 +856,7 @@ async function startTL() {
   const startBtn = document.getElementById('tl-start-btn');
   startBtn.className = 'btn btn-danger';
   startBtn.style.cssText = 'width:100%;justify-content:center';
-  startBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg> Stop Timelapse';
+  startBtn.innerHTML = SVG_STOP_10 + ' Stop Timelapse';
   _showTLRunning(duration > 0);
   tlPollTimer  = setInterval(pollTL, _tlPollMs);
   tlClockTimer = setInterval(_tlClockTick, 1000);
@@ -862,11 +882,11 @@ function _tlStopped() {
   document.getElementById('tl-interval-slider').disabled = false;
   document.getElementById('tl-dur-slider').disabled = false;
   document.getElementById('tl-btn').className = 'btn btn-tl';
-  document.getElementById('tl-btn').innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg> Timelapse';
+  document.getElementById('tl-btn').innerHTML = SVG_CLOCK_14 + ' Timelapse';
   const startBtn = document.getElementById('tl-start-btn');
   startBtn.className = 'btn btn-tl';
   startBtn.style.cssText = 'width:100%;justify-content:center';
-  startBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg> Start Timelapse';
+  startBtn.innerHTML = SVG_CLOCK_14 + ' Start Timelapse';
   _showTLIdle();
   document.getElementById('tl-live-strip').style.display = 'none';
   updateFSQuickBtns();
@@ -987,7 +1007,13 @@ function renderStats(d) {
     const sigEl = document.getElementById('ic-wifi-signal');
     const label = sig >= -55 ? 'Excellent' : sig >= -65 ? 'Good' : sig >= -75 ? 'Fair' : 'Weak';
     const color = sig >= -55 ? 'var(--green)' : sig >= -65 ? 'var(--green-md)' : sig >= -75 ? 'var(--amber-lt)' : 'var(--red)';
-    sigEl.innerHTML = label + '<br><span style="font-size:0.85em;font-weight:400;opacity:0.8">' + sig + ' dBm</span>';
+    // Built via DOM (not innerHTML) — sig comes from the stats API response.
+    sigEl.textContent = label;
+    sigEl.appendChild(document.createElement('br'));
+    const dbm = document.createElement('span');
+    dbm.style.cssText = 'font-size:0.85em;font-weight:400;opacity:0.8';
+    dbm.textContent = sig + ' dBm';
+    sigEl.appendChild(dbm);
     sigEl.style.color = color;
   } else {
     document.getElementById('ic-wifi-signal').textContent = '—';
@@ -1031,9 +1057,7 @@ function toggleMic() {
   recAudio = !recAudio;
   const btn = document.getElementById('mic-btn');
   btn.classList.toggle('active', recAudio);
-  btn.innerHTML = (recAudio
-    ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg> Microphone On'
-    : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg> Microphone Off');
+  btn.innerHTML = SVG_MIC_13 + (recAudio ? ' Microphone On' : ' Microphone Off');
 }
 
 // Mic icon SVG paths — 36×36 to match the initial HTML icon size
@@ -1148,8 +1172,12 @@ function toggleFilterPanel() {
 }
 
 function setFilm(el) {
-  document.querySelectorAll('#film-chips .film-card, #film-chips .film-clear').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#film-chips .film-card, #film-chips .film-clear').forEach(b => {
+    b.classList.remove('active');
+    b.setAttribute('aria-pressed', 'false');
+  });
   el.classList.add('active');
+  el.setAttribute('aria-pressed', 'true');
   const film = el.dataset.film;
   _ctrl.film_filter = film;
   _ctrl.film_strength = 100;
@@ -1253,7 +1281,9 @@ function _gainToStep(v) {
 
 function toggleShutterMode() {
   _shutterAngleMode = !_shutterAngleMode;
-  document.getElementById('shutter-angle-btn').classList.toggle('active', _shutterAngleMode);
+  const angleBtn = document.getElementById('shutter-angle-btn');
+  angleBtn.classList.toggle('active', _shutterAngleMode);
+  angleBtn.setAttribute('aria-pressed', String(_shutterAngleMode));
   const lbl = document.getElementById('shutter-mode-label');
   lbl.innerHTML = _shutterAngleMode
     ? 'Shutter angle <span style="color:var(--dim)">(0 = auto, @30fps)</span>'
@@ -1584,8 +1614,7 @@ function _tlClockTick() {
   const s  = Math.floor(elapsed);
   const mm = String(Math.floor(s / 60)).padStart(2, '0');
   const ss = String(s % 60).padStart(2, '0');
-  document.getElementById('tl-btn').innerHTML =
-    '<svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg> ' + mm + ':' + ss;
+  document.getElementById('tl-btn').innerHTML = SVG_STOP_11 + ' ' + mm + ':' + ss;
 
   _updateTLStrip(elapsed);
 }
