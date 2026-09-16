@@ -16,7 +16,7 @@ Before proposing any plan or making any change, you must:
 
 | Pi | LAN IP | Tailscale IP | Connection | Role |
 |---|---|---|---|---|
-| pi3 | 192.168.4.127 (wlan0) / 192.168.4.206 (eth0) | 100.121.172.30 | WiFi (eth0 available) | Camera node — currently unreachable on LAN, accessible via Tailscale relay only |
+| pi3 | 192.168.4.206 (eth0) | 100.121.172.30 | Ethernet (WiFi issues resolved 2026-07-02) | Camera node — IMX219 CSI, LAN + Tailscale |
 | pi4 | 192.168.4.186 | 100.110.247.12 | WiFi only (eth0 NO-CARRIER) | Greenhouse camera + sensor/relay node |
 | pi5 | 192.168.4.132 (eth0) | 100.94.38.51 | Ethernet + WiFi | Primary dev/commit node + camera dashboard |
 | bigpc | 192.168.4.138 | 100.75.224.125 | Ethernet | AI pipeline, journal app, Ollama |
@@ -38,8 +38,8 @@ Before proposing any plan or making any change, you must:
 | Public URL | Terminates at | Pi | Service |
 |---|---|---|---|
 | greenhouse.chrisdowsett.com | pi4:5000 | pi4 | greenhouse-monitor (sensor dashboard + relay control) |
-| cam.chrisdowsett.com | pi4:8080 | pi4 | garden-monitor (C930e USB camera) |
-| cameras.chrisdowsett.com | pi5:8080 | pi5 | garden-monitor (IMX708 CSI camera + multi-camera dashboard + greenhouse proxy at /greenhouse) |
+| cam.chrisdowsett.com | pi4:8080 | pi4 | garden-monitor (IMX708 CSI camera since 2026-07-02 swap) |
+| cameras.chrisdowsett.com | pi5:8080 | pi5 | garden-monitor (C930e USB camera since 2026-07-02 swap + multi-camera dashboard + greenhouse proxy at /greenhouse) |
 | greenhousejournal.chrisdowsett.com | bigpc:5000 | bigpc | greenhouse-analysis (AI journal) |
 | media.chrisdowsett.com | bigpc:5001 | bigpc | bigpc-dashboard |
 | chat.chrisdowsett.com | bigpc:3000 | bigpc | Claude Code gateway |
@@ -52,7 +52,7 @@ Before proposing any plan or making any change, you must:
 ### pi4
 | Service | Port | Purpose |
 |---|---|---|
-| garden-monitor | 8080 | C930e USB camera stream + snapshots |
+| garden-monitor | 8080 | IMX708 CSI camera stream + snapshots (no audio — mic left with the C930e) |
 | greenhouse-monitor | 5000 | DHT11 sensor + 4-relay automation + web UI |
 | motor-control | 5001 | Camera pan/tilt PWM (not externally exposed) |
 | pigpiod | — | GPIO daemon required by greenhouse-monitor and motor-control |
@@ -61,7 +61,7 @@ Before proposing any plan or making any change, you must:
 ### pi5
 | Service | Port | Purpose |
 |---|---|---|
-| garden-monitor | 8080 | IMX708 CSI camera + multi-camera dashboard + greenhouse proxy |
+| garden-monitor | 8080 | C930e USB camera (v4l2 passthrough, has mic) + multi-camera dashboard + greenhouse proxy |
 | cloudflared | — | Tunnel: cameras.chrisdowsett.com |
 
 ### pi3
@@ -82,6 +82,7 @@ Before proposing any plan or making any change, you must:
 | Time | Job |
 |---|---|
 | 02:30 daily | /home/chris/sync-to-bigpc.sh |
+| Every 5 min | /home/chris/dev/apps/watchdogs/watchdog-garden-monitor.sh (added 2026-07-02 — restarts on HTTP failure or frame_age_s > 120) |
 
 ## Known traps — read before every session
 
@@ -89,7 +90,7 @@ Before proposing any plan or making any change, you must:
 
 2. **Ollama on bigpc binds to 172.17.0.1:11434, not localhost.** Any script calling Ollama must use http://172.17.0.1:11434 — localhost will fail silently.
 
-3. **pi3 is currently unreachable on LAN.** SSH via Tailscale (100.121.172.30) only. Its WiFi (wlan0) bounces continuously — a watchdog reconnects it but it may be down at any moment.
+3. **pi3 is on ethernet (192.168.4.206) since 2026-07-02.** The old WiFi-bounce problem was caused by a self-defeating watchdog and is resolved. Reachable on LAN and Tailscale (100.121.172.30).
 
 4. **pi4 is WiFi only.** eth0 shows NO-CARRIER. A WiFi dropout takes greenhouse-monitor, garden-monitor, motor-control, and both Cloudflare tunnels offline simultaneously.
 
