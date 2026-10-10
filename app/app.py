@@ -336,20 +336,88 @@ def cam_ctrl_defaults():
 
 @app.route("/api/servo/move", methods=["POST"])
 def servo_move():
-    data = request.json or {}
-    servo.move(float(data.get("pan", 0.0)), float(data.get("tilt", 0.0)))
+    data = request.get_json(silent=True) or {}
+    servo.move(float(data.get("pan", 0.0)), float(data.get("tilt", 0.0)), data.get("seq"))
     return jsonify({"ok": True})
 
 
 @app.route("/api/servo/stop", methods=["POST"])
 def servo_stop():
-    servo.stop()
+    servo.stop((request.get_json(silent=True) or {}).get("seq"))
     return jsonify({"ok": True})
 
 
 @app.route("/api/servo/status")
 def servo_status():
     return jsonify(servo.status())
+
+
+# ── Pan/tilt views (saved camera positions) ────────────────────────────────────
+# GET /api/ptz returns everything the views UI needs; moves return at once and
+# run in the background (poll /api/ptz).  Cameras without a rig answer
+# {"enabled": false}, and the dashboard hides the views for them.
+
+servo.attach(frame_source=camera.get_stream_frame,
+             timelapse_running=lambda: timelapse.running)
+
+
+def _ptz_call(fn, *args, **kwargs):
+    try:
+        return jsonify({"ok": True, "result": fn(*args, **kwargs), "state": servo.ptz_state()})
+    except KeyError:
+        return jsonify({"ok": False, "error": "no such view"}), 404
+    except (RuntimeError, ValueError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+
+
+@app.route("/api/ptz")
+def ptz_state():
+    return jsonify(servo.ptz_state())
+
+
+@app.route("/api/ptz/goto", methods=["POST"])
+def ptz_goto():
+    return _ptz_call(servo.goto, (request.get_json(silent=True) or {}).get("id", ""))
+
+
+@app.route("/api/ptz/nudge", methods=["POST"])
+def ptz_nudge():
+    data = request.get_json(silent=True) or {}
+    return _ptz_call(servo.nudge, float(data.get("pan", 0)), float(data.get("tilt", 0)))
+
+
+@app.route("/api/ptz/views", methods=["POST"])
+def ptz_add_view():
+    name = str((request.get_json(silent=True) or {}).get("name", "")).strip() or "New view"
+    return _ptz_call(servo.add_view, name)
+
+
+@app.route("/api/ptz/views/order", methods=["POST"])
+def ptz_reorder():
+    return _ptz_call(servo.reorder_views, (request.get_json(silent=True) or {}).get("ids", []))
+
+
+@app.route("/api/ptz/views/<view_id>", methods=["POST"])
+def ptz_update_view(view_id):
+    data = request.get_json(silent=True) or {}
+    return _ptz_call(servo.update_view, view_id, name=data.get("name"),
+                     save_view=bool(data.get("save_view")))
+
+
+@app.route("/api/ptz/views/<view_id>", methods=["DELETE"])
+def ptz_delete_view(view_id):
+    return _ptz_call(servo.delete_view, view_id)
+
+
+@app.route("/api/ptz/thumb/<view_id>.jpg")
+def ptz_thumb(view_id):
+    try:
+        path = servo.thumb_path(view_id)
+    except RuntimeError:
+        return "", 404
+    if not path.exists():
+        return "", 404
+    return send_from_directory(path.parent, path.name, max_age=0)
 
 
 # ── System stats + info ────────────────────────────────────────────────────────

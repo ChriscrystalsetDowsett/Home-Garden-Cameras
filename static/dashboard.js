@@ -23,6 +23,7 @@ let   _dAudioReader    = null;
 let   _dAudioNext      = 0;
 let   _dAudioLeftover  = null;
 let pollTimer     = null;
+let _drawerPtz    = [];     // view widgets mounted in the drawer (destroyed on close)
 let toastTimer    = null;
 // Pull-based stream (iOS Safari compatible — MJPEG is not supported in Safari)
 const _TILE_FRAME_MS = Math.round(1000 / 15);   // 15 fps tiles
@@ -169,8 +170,12 @@ function promoteTile(ev, btn) {
   ev.stopPropagation();
   const tile = btn.closest('.cam-tile');
   if (!tile || tile.classList.contains('is-hero')) return;
-  document.querySelectorAll('.cam-tile.is-hero').forEach(t => t.classList.remove('is-hero'));
+  document.querySelectorAll('.cam-tile.is-hero').forEach(t => {
+    t.classList.remove('is-hero');
+    t.querySelector('.ptz-chips')?.classList.remove('big');
+  });
   tile.classList.add('is-hero');
+  tile.querySelector('.ptz-chips')?.classList.add('big');
 }
 
 /* ── Drawer open / close ─────────────────────────────────────────────────────── */
@@ -199,6 +204,7 @@ function openDrawer(tile) {
   drawerHasAudio = false;
   _stopDrawerAudio();
   _startDrawerStream();
+  _mountDrawerViews();
   fetchStatus();
   fetchCamInfo();
   pollTimer = setInterval(fetchStatus, 3000);
@@ -244,6 +250,8 @@ function closeDrawer() {
   }
 
   _stopDrawerAudio();
+  _drawerPtz.forEach(w => w.destroy());
+  _drawerPtz = [];
   document.getElementById('drawer').classList.remove('open');
   document.getElementById('drawer-backdrop').classList.remove('visible');
 
@@ -253,6 +261,29 @@ function closeDrawer() {
   setTimeout(() => {
     document.getElementById('drawer-stream-img').src = '';
   }, 360);
+}
+
+/* ── Pan/tilt views ──────────────────────────────────────────────────────────── */
+// Every camera gets the same wiring; ptz.js draws nothing for a camera that
+// reports no rig, so a new rig shows up here without dashboard changes.
+
+function _ptzBase(idx) { return '/dashboard/cam/' + idx + '/proxy'; }
+
+function _mountTileViews() {
+  document.querySelectorAll('.cam-tile[data-idx]').forEach(tile => {
+    const idx = parseInt(tile.dataset.idx, 10);
+    PTZ.chips(tile.querySelector('.tile-stream-wrap'), _ptzBase(idx),
+              {big: tile.classList.contains('is-hero')});
+  });
+}
+
+function _mountDrawerViews() {
+  _drawerPtz.forEach(w => w.destroy());
+  const base = _ptzBase(activeIdx);
+  const wrap = document.querySelector('.drawer-stream-wrap');
+  const fsChips = PTZ.chips(wrap, base, {big: true});
+  wrap.querySelector('.ptz-chips').classList.add('fs-only');
+  _drawerPtz = [PTZ.panel(document.getElementById('drawer-views'), base), fsChips];
 }
 
 /* ── Status polling ──────────────────────────────────────────────────────────── */
@@ -633,3 +664,4 @@ window.addEventListener('pageshow', function (e) {
 
 // Kick off tile streams on page load
 _startAllTiles();
+_mountTileViews();

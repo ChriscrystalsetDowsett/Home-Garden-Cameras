@@ -233,9 +233,11 @@ const SERVO_DEAD_PX    = 12;    // px — ignore sub-threshold movement
 const SERVO_MAX_PX     = 90;    // px — reach full speed at this displacement
 const SERVO_THROTTLE_MS = 50;   // ms — max 20 commands/sec
 const SERVO_RING_R      = 42;   // px — joystick ring radius for visual clamp
+const SERVO_HEARTBEAT_MS = 400; // ms — resend the held velocity; the rig stops itself after 1.5 s of silence
 
 let _st   = null;   // active touch: { id, x0, y0 } or null
 let _stTs = 0;      // timestamp of last command sent
+let _stBeat = null; // heartbeat timer while a drag is held still
 
 function _inFS() {
   return !!(document.fullscreenElement || document.webkitFullscreenElement || _iosFakeFS);
@@ -248,18 +250,37 @@ function _servoNorm(delta) {
   return sign * Math.min(1.0, (abs - SERVO_DEAD_PX) / (SERVO_MAX_PX - SERVO_DEAD_PX));
 }
 
-function _servoSend(pan, tilt) {
+// Send time in ms (sub-ms precision): the server drops a command that arrives
+// after a newer one, e.g. a heartbeat overtaken by the stop.
+function _servoSeq() {
+  return (performance.timeOrigin || Date.now() - performance.now()) + performance.now();
+}
+
+function _servoPost(pan, tilt) {
   fetch('/api/servo/move', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({pan, tilt}),
+    body: JSON.stringify({pan, tilt, seq: _servoSeq()}),
   }).catch(() => {});
+}
+
+function _servoSend(pan, tilt) {
+  _servoPost(pan, tilt);
+  // A finger held still fires no touchmove, so keep repeating the last command.
+  clearInterval(_stBeat);
+  _stBeat = (pan || tilt) ? setInterval(() => _servoPost(pan, tilt), SERVO_HEARTBEAT_MS) : null;
 }
 
 function _servoStop() {
   _st = null;
+  clearInterval(_stBeat);
+  _stBeat = null;
   _sjHide();
-  fetch('/api/servo/stop', {method: 'POST'}).catch(() => {});
+  fetch('/api/servo/stop', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({seq: _servoSeq()}),
+  }).catch(() => {});
 }
 
 // ── Joystick visual ────────────────────────────────────────────────────────────
@@ -291,7 +312,7 @@ function _sjHide() {
 const _feedEl = document.getElementById('feed-wrap');
 
 _feedEl.addEventListener('touchstart', e => {
-  if (!_inFS()) return;
+  if (!_inFS() || !_swipeOn) return;
   // Ignore touches that land on buttons or the top overlay
   if (e.target.closest('button, .feed-overlay, #res-options')) return;
   if (_st) return;
@@ -319,6 +340,22 @@ _feedEl.addEventListener('touchend', e => {
 }, {passive: true});
 
 _feedEl.addEventListener('touchcancel', () => { if (_st) _servoStop(); }, {passive: true});
+
+// ── Pan/tilt views ─────────────────────────────────────────────────────────────
+// Saved views are the main control: a panel under the feed, and one-tap chips
+// over the picture in fullscreen.  The swipe joystick above only runs when
+// servo.swipe is true in settings.yaml.  Through the dashboard this page lives
+// under /camera/<n>/, so API calls need that prefix (CSS thumbnails are not
+// rewritten by the dashboard's URL shim).
+let _swipeOn = false;
+(function () {
+  const base = (location.pathname.match(/^\/camera\/\d+/) || [''])[0];
+  PTZ.panel(document.getElementById('ptz-panel-host'), base);
+  PTZ.chips(_feedEl, base, {big: true});
+  _feedEl.querySelector('.ptz-chips').classList.add('fs-only');
+  fetch(base + '/api/ptz').then(r => r.json()).then(s => { _swipeOn = !!(s.enabled && s.swipe); })
+    .catch(() => {});
+})();
 
 // ── Camera info ────────────────────────────────────────────────────────────────
 const MODEL_NAMES = {

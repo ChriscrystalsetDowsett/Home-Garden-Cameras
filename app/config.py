@@ -51,10 +51,12 @@ SECRET_KEY         = _dash.get("secret_key", "dev-secret-key")
 
 # ── Servo pan/tilt ────────────────────────────────────────────────────────────
 _servo         = _cfg.get("servo", {})
-SERVO_ENABLED  = bool(_servo.get("enabled", False))
-SERVO_PAN_PIN  = int(_servo.get("pan_pin",  18))
-SERVO_TILT_PIN = int(_servo.get("tilt_pin", 19))
-SERVO_SPEED    = max(0.0, min(1.0, float(_servo.get("speed", 0.8))))
+SERVO_ENABLED     = bool(_servo.get("enabled", False))
+SERVO_SPEED       = max(0.0, min(1.0, float(_servo.get("speed", 0.8))))
+SERVO_DRIVER_PATH = str(_servo.get("driver_path", "/home/chris/pantilt"))   # pins + limits live there
+SERVO_SWIPE       = bool(_servo.get("swipe", False))          # fullscreen drag joystick (views are the main control)
+SERVO_NUDGE_PAN   = float(_servo.get("nudge_pan_deg", 5))     # arrow-button step sizes
+SERVO_NUDGE_TILT  = float(_servo.get("nudge_tilt_deg", 4))
 
 # ── Greenhouse proxy ──────────────────────────────────────────────────────────
 _gh             = _cfg.get("greenhouse", {})

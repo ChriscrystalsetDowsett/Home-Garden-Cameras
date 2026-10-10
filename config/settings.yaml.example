@@ -30,6 +30,16 @@ schedule:
   camera_off: "21:00"   #  9:00 pm
   camera_on:  "06:00"   #  6:00 am
 
+# ── Pan/tilt rig (swipe joystick in fullscreen) ────────────────────────────────
+# Driver, pins and limits live in the pantilt project (driver_path/config.yaml).
+servo:
+  enabled: false
+  speed: 0.8                          # 0..1, scales the joystick speed
+  driver_path: "/home/chris/pantilt"
+  swipe: false                        # fullscreen drag joystick; saved views + arrows are the main control
+  nudge_pan_deg: 5                    # arrow-button step sizes
+  nudge_tilt_deg: 4
+
 # ── Dashboard — list of camera Pis to show in the /dashboard grid ─────────────
 # Add one entry per camera Pi. Use the Pi's LAN IP — 'localhost' only works if
 # the browser is running on that same machine.

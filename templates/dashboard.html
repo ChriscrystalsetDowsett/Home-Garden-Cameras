@@ -9,6 +9,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
 <title>Home Garden Cameras</title>
 <link rel="stylesheet" href="/static/dashboard.css?v=8">
+<link rel="stylesheet" href="/static/ptz.css?v=1">
 </head>
 <body>
 
@@ -140,6 +141,9 @@
   </div>
   <audio id="drawer-audio" style="display:none"></audio>
 
+  <!-- Pan/tilt views (filled by static/ptz.js for cameras that have a rig) -->
+  <div class="drawer-views ptz-host" id="drawer-views"></div>
+
   <div class="drawer-actions">
     <button class="action-btn photo-btn" id="btn-photo" onclick="doPhoto()">
       <span class="btn-main">📷 <span>Photo</span></span>
@@ -194,6 +198,7 @@
 <div class="toast" id="toast"></div>
 
 
-<script src="/static/dashboard.js?v=14"></script>
+<script src="/static/ptz.js?v=1"></script>
+<script src="/static/dashboard.js?v=15"></script>
 </body>
 </html>
