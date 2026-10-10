@@ -34,6 +34,12 @@ if DEFAULT_RESOLUTION not in RESOLUTIONS:
 # Quality for the live stream served by /api/frame (v4l2 backend only).
 # picamera2 backend uses STREAM_BITRATE instead — bitrate controls quality there.
 STREAM_JPEG_QUALITY = max(1, min(95, int(_cfg["camera"].get("stream_quality", 60))))
+# picamera2 live feed: quality follows the network link (checked every LINK_CHECK_S).
+# Wifi tops out around 5 MB/s on pi4, so higher quality there costs frame rate.
+STREAM_QUALITY_WIFI     = max(1, min(95, int(_cfg["camera"].get("stream_quality_wifi", STREAM_JPEG_QUALITY))))
+STREAM_QUALITY_ETHERNET = max(1, min(95, int(_cfg["camera"].get("stream_quality_ethernet", 90))))
+ETHERNET_INTERFACE      = str(_cfg["camera"].get("ethernet_interface", "eth0"))
+LINK_CHECK_S            = 10
 
 # Bitrate for the MJPEGEncoder live feed (picamera2 backend only).
 STREAM_BITRATE = max(1_000_000, int(_cfg["camera"].get("stream_bitrate", 10_000_000)))

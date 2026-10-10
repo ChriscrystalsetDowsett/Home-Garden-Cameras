@@ -8,7 +8,8 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from .config import (SNAPSHOT_DIR, RESOLUTIONS, CAM_CTRL_DEFAULTS,
                      DEFAULT_RESOLUTION, CAM_BACKEND, V4L2_MODE, CAM_USB_ID,
-                     STREAM_JPEG_QUALITY, STREAM_BITRATE)
+                     STREAM_JPEG_QUALITY, STREAM_BITRATE,
+                     STREAM_QUALITY_WIFI, STREAM_QUALITY_ETHERNET, ETHERNET_INTERFACE, LINK_CHECK_S)
 from .film import FILM_FILTERS
 from .postprocess import postprocess_jpeg
 
@@ -135,6 +136,23 @@ def _apply_filter(img, name):
 _WARMTH_NEUTRAL = int(CAM_CTRL_DEFAULTS["warmth"])
 
 # ── Stream output (shared by both backends) ────────────────────────────────────
+
+def _link_type(iface):
+    """"ethernet" when the cable is in and the port has an IPv4 address, else "wifi"."""
+    try:
+        if open(f"/sys/class/net/{iface}/carrier").read().strip() != "1":
+            return "wifi"
+        import socket, struct
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            fcntl.ioctl(sock.fileno(), 0x8915, struct.pack("256s", iface.encode()[:15]))  # SIOCGIFADDR
+        return "ethernet"
+    except OSError:
+        return "wifi"
+
+
+def _quality_for(link):
+    return STREAM_QUALITY_ETHERNET if link == "ethernet" else STREAM_QUALITY_WIFI
+
 class StreamOutput(io.BufferedIOBase):
     def __init__(self):
         self.frame      = None
@@ -193,7 +211,27 @@ class CameraManager:
         self._still_request = threading.Event()
         self._still_done    = threading.Event()
         self._still_img     = None
+        # Live-feed JPEG quality follows the network link: higher on ethernet.
+        self.link           = _link_type(ETHERNET_INTERFACE)
+        self.stream_quality = _quality_for(self.link)
         threading.Thread(target=self._capture_loop, daemon=True, name="capture").start()
+        if CAM_BACKEND == "picamera2":
+            threading.Thread(target=self._watch_link, daemon=True, name="link-watch").start()
+
+    def _watch_link(self):
+        """Re-pick the stream quality when ethernet is plugged in or pulled."""
+        while not self._stop.wait(LINK_CHECK_S):
+            link = _link_type(ETHERNET_INTERFACE)
+            if link == self.link:
+                continue
+            q = _quality_for(link)
+            logging.getLogger(__name__).warning(
+                "network link %s -> %s: live-feed JPEG quality %d -> %d",
+                self.link, link, self.stream_quality, q)
+            changed = q != self.stream_quality
+            self.link, self.stream_quality = link, q
+            if changed:
+                self._restart.set()     # the capture loop rebuilds the encoder (~1 s blip)
 
     def set_enabled(self, value: bool) -> None:
         self.enabled = bool(value)
@@ -273,7 +311,7 @@ class CameraManager:
                 backoff = min(backoff * 2, 30)
                 continue
             backoff = 1
-            encoder = JpegEncoder(q=STREAM_JPEG_QUALITY, num_threads=2)
+            encoder = JpegEncoder(q=self.stream_quality, num_threads=2)
             with self.lock:
                 self._handle = picam2
             with cam_ctrl_lock:

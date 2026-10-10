@@ -435,4 +435,6 @@ def pi_info():
     info = get_pi_info()
     info["audio_available"] = AUDIO_AVAILABLE
     info["cam_backend"]     = CAM_BACKEND
+    info["network_link"]    = camera.link
+    info["stream_quality"]  = camera.stream_quality
     return jsonify(info)
