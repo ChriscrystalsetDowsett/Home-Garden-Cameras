@@ -543,7 +543,7 @@ function updateButtons() {
   const recBtn = document.getElementById('btn-record');
   const tlBtn  = document.getElementById('btn-timelapse');
 
-  document.getElementById('rec-label').textContent = recRunning ? 'Stop Rec' : 'Record';
+  document.getElementById('rec-label').textContent = recRunning ? 'Stop' : 'Video';
   recBtn.classList.toggle('active', recRunning);
 
   document.getElementById('tl-label').textContent = tlRunning ? 'Stop TL' : 'Timelapse';
@@ -558,8 +558,8 @@ async function doPhoto() {
   btn.disabled = true;
   try {
     const resp = await camFetch(activeIdx, 'api/snapshot', 'POST', { quality: 95 });
-    const data = await resp.json();
-    showToast(data.filename ? `📷 Saved: ${data.filename}` : 'Snapshot failed');
+    const data = await resp.json().catch(() => ({}));
+    showToast(resp.ok && data.filename ? '📷 Photo saved' : _why(resp, data, 'Photo failed'));
   } catch {
     showToast('Error taking photo');
   } finally {
@@ -572,12 +572,13 @@ async function toggleRecord() {
   const btn  = document.getElementById('btn-record');
   btn.disabled = true;
   const path = recRunning ? 'api/record/stop' : 'api/record/start';
-  const body = recRunning ? {} : { quality: 18, audio: drawerHasAudio };
+  // Quick capture: a 30 s clip that stops on the camera by itself.
+  const body = recRunning ? {} : { quality: 18, audio: drawerHasAudio, duration: 30 };
   try {
     const resp = await camFetch(activeIdx, path, 'POST', body);
-    const data = await resp.json();
-    if (data.error) {
-      showToast('Camera unreachable');
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.ok === false) {
+      showToast(_why(resp, data, 'Recording failed'));
     } else {
       const wasStarting = !recRunning;
       recRunning = !recRunning;
@@ -586,7 +587,7 @@ async function toggleRecord() {
       if (!recRunning && data.audio_ok === false && body.audio) {
         showToast('⏹ Recording stopped (no audio captured)');
       } else {
-        showToast(recRunning ? (drawerHasAudio ? '🔴 Recording started (with audio)' : '🔴 Recording started') : '⏹ Recording stopped');
+        showToast(recRunning ? (drawerHasAudio ? '🔴 Recording 30 s (with sound)' : '🔴 Recording 30 s') : '⏹ Recording stopped');
       }
     }
   } catch {
@@ -601,12 +602,12 @@ async function toggleTimelapse() {
   const btn  = document.getElementById('btn-timelapse');
   btn.disabled = true;
   const path = tlRunning ? 'api/timelapse/stop' : 'api/timelapse/start';
-  const body = tlRunning ? {} : { interval: 10, duration: 1800 };
+  const body = tlRunning ? {} : { preset: 'tl30' };      // 30 min, a 4K frame every 10 s
   try {
     const resp = await camFetch(activeIdx, path, 'POST', body);
-    const data = await resp.json();
-    if (data.error) {
-      showToast('Camera unreachable');
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.ok === false) {
+      showToast(_why(resp, data, 'Timelapse failed'));
     } else {
       tlRunning = !tlRunning;
       updateButtons();
@@ -717,6 +718,11 @@ function _updateDrawerAudioBtn() {
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────────────── */
+
+function _why(resp, data, fallback) {
+  if (resp.status === 502 || resp.status === 504) return 'Camera unreachable';
+  return data.message || fallback;
+}
 
 function camFetch(idx, path, method = 'GET', body = null) {
   const opts = { method };
