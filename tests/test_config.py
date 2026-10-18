@@ -47,3 +47,14 @@ def test_skip_env_var_bypasses_validation(monkeypatch):
     monkeypatch.setenv("HGC_SKIP_SECRET_CHECK", "1")
     monkeypatch.setattr(config, "API_TOKEN", "")
     config._validate()  # must not raise
+
+
+def test_routine_request_lines_are_not_logged():
+    import logging
+    from app.logs import _QuietAccessLog
+    f = _QuietAccessLog()
+    # werkzeug logs '<addr> - - [<date>] "%s" %s %s' with args (request_line, code, size)
+    rec2 = lambda code: logging.LogRecord("werkzeug", logging.INFO, "", 0, '"%s" %s %s',
+                                          ("GET /api/frame HTTP/1.1", code, "-"), None)
+    assert not f.filter(rec2("200")) and not f.filter(rec2("304")) and not f.filter(rec2("503"))
+    assert f.filter(rec2("401")) and f.filter(rec2("500"))
