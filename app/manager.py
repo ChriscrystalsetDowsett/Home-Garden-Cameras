@@ -23,6 +23,9 @@ from .postprocess import postprocess_jpeg
 from .stream import StreamOutput
 
 
+from .config import CAM_USB_ID
+CAM_USB_IS_LOGITECH = str(CAM_USB_ID).lower().startswith("046d:")
+
 # JPEG re-encode quality for effects + v4l2 snapshots (baseline).
 JPEG_QUALITY = 85
 STILL_CAPTURE_TIMEOUT_S = 12  # a 12 MP still takes ~3 s on a Pi 4, longer on a Pi 3
@@ -253,28 +256,23 @@ class CameraManager:
             tmp.replace(path)
             return filename
 
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=save_quality)
-        path.write_bytes(buf.getvalue())
-        meta = {
-            "datetime": exif_dt,
-            "make": "Raspberry Pi" if CAM_BACKEND == "picamera2" else "Logitech",
-            "model": self.model,
-            "description": "Home Garden Cameras Timelapse Frame" if prefix == "tl"
-                          else "Home Garden Cameras Photo",
-            "hflip": ctrl.get("hflip", False),
-            "vflip": ctrl.get("vflip", False),
-            "exposure_mode": 1 if ctrl.get("exposure_time", 0) > 0 else 0,
-            "white_balance": 1 if ctrl.get("awb_mode", "auto") != "auto" else 0,
-        }
-
-        if prefix == "tl":
-            threading.Thread(
-                target=postprocess_jpeg, args=(path, save_quality),
-                kwargs={"fast": True, "metadata": meta}, daemon=True,
-            ).start()
-        else:
-            postprocess_jpeg(path, save_quality, metadata=meta)
+        # USB cameras: the stream frame (it already carries the live look),
+        # cleaned up by postprocess, then the same EXIF as the CSI cameras.
+        from . import exif
+        from .config import PI_NAME
+        img.save(path, format="JPEG", quality=save_quality)
+        postprocess_jpeg(path, save_quality, fast=prefix.startswith("tl"))
+        blob = exif.build(
+            when=now, make="Logitech" if CAM_USB_IS_LOGITECH else "USB camera", model=self.model,
+            description=description or ("Timelapse frame" if prefix.startswith("tl") else "Photo"),
+            width=img.width, height=img.height, pi_name=PI_NAME,
+            manual_exposure=ctrl.get("exposure_time", 0) > 0,
+            manual_wb=ctrl.get("awb_mode", "auto") != "auto")
+        if blob and exif.piexif is not None:
+            try:
+                exif.piexif.insert(blob, str(path))
+            except Exception as e:
+                logging.warning("EXIF insert failed for %s: %s", filename, e)
         return filename
 
     # ── ISP controls (routed to the active backend) ────────────────────────

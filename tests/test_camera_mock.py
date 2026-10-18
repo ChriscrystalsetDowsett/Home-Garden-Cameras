@@ -117,3 +117,22 @@ def test_backends_expose_run_and_apply_controls():
 
 def test_v4l2_passthrough_available_is_bool():
     assert isinstance(v4l2_passthrough.available(), bool)
+
+
+def test_usb_camera_photo_path_saves_with_exif(tmp_path, monkeypatch):
+    """The stream-frame path (USB cameras) must save a JPEG with EXIF."""
+    import io, time
+    import piexif
+    from PIL import Image
+    import app.manager as M
+    cam = M.camera
+    monkeypatch.setattr(M, "CAM_BACKEND", "v4l2")
+    buf = io.BytesIO(); Image.new("RGB", (64, 48), (90, 120, 60)).save(buf, "JPEG")
+    monkeypatch.setattr(cam.output, "frame", buf.getvalue())
+    monkeypatch.setattr(cam.output, "last_write", time.time())
+    with cam.output.condition:
+        cam.output.condition.notify_all()
+    fn = cam.capture(prefix="Photo", dest_dir=tmp_path)
+    assert fn and (tmp_path / fn).exists()
+    exif = piexif.load(str(tmp_path / fn))
+    assert exif["Exif"].get(piexif.ExifIFD.DateTimeOriginal)
