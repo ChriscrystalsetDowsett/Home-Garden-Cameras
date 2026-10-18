@@ -1,4 +1,29 @@
 # CLAUDE.md — Fleet Ground Truth
+
+## Current state (2026-10-18): read this first
+
+- **One codebase, branch `fleet`** (this worktree on bigPC: `~/dev/greenhouse/pi/home-garden-cameras/pi4-v2`).
+  Every Pi runs the same code; only `config/settings.yaml` differs (gitignored, never copied).
+- **Deploy only with `scripts/deploy.sh pi3|pi4|pi5`** from bigPC: tests → backup → copy → restart →
+  health check → automatic rollback. `--dry-run`, `--rollback`. The Pis are no longer git checkouts
+  (their old `.git` is parked in `~/backups/` on each Pi). Never `git pull` on a Pi.
+- `/api/health` on every camera reports version, camera state, sleeping/wakes_at, temperature, rig,
+  and the last backup (`~/.sync-status.json`).
+- **Access** (`app/access.py`): internet requests (Cf-Connecting-Ip) need a signed-in device; a device
+  signs in once (password or invite link) and stays signed in for a year. Devices page:
+  `/dashboard/devices`. Writes need a signed-in device, the fleet Bearer token (the wall's proxy sends
+  it; bigPC copy in `~/.config/home-cameras/fleet-token`) or direct loopback. Never print the token.
+- Nightly backup: `~/sync-to-bigpc.sh` on each Pi (same script as `scripts/sync-to-bigpc.sh`),
+  LAN to bigPC 192.168.4.138, cron pi3 02:00 / pi4 02:15 / pi5 02:30.
+- Alerts: `scripts/fleet-alerts.py` on pi5 every 5 min → `~/fleet-alerts.log` (+ ntfy if
+  `alerts.ntfy_url` is set in pi5 settings.yaml).
+- SSH: `pi3`, `pi4`, `pi5-lan` (Tailscale on pi4/pi5 logged out since 2026-09-26).
+- The greenhouse is shut down for winter: greenhouse-monitor, the /greenhouse proxy and
+  cam.chrisdowsett.com are gone. pi4 is the basement camera with the pan/tilt rig (`~/pantilt`).
+- Audit and plan: `~/dev/notes/camera-system-audit-2026-10-18.md`.
+
+The sections below are older (2026-06/07). Where they disagree with the above, the above wins.
+
 **Last verified:** 2026-06-17
 **Verified from:** live service files, cloudflared configs, and crontabs — not from documentation
 
@@ -138,12 +163,8 @@ home-garden-cameras/
 
 ## Deployment model
 
-- **Pi 5** is the primary development and commit machine. All code changes are tested
-  here and pushed to GitHub from here.
-- **Pi 3 and Pi 4** are camera nodes. They pull from GitHub to get updates — never
-  push code directly from them.
-- After pushing from pi5: SSH into each camera Pi and run
-  `git pull && sudo systemctl restart <service>`.
+- **Superseded 2026-10-18:** develop on bigPC in the `fleet` worktree, run `make test`,
+  commit, then `scripts/deploy.sh <pi>` for each Pi. No git on the Pis.
 - **`/etc/systemd/system/<service>.service` is NOT in git.** Changes to it (e.g. new
   `Environment=` lines) must be applied manually on every Pi that needs them.
 
