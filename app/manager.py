@@ -231,12 +231,19 @@ class CameraManager:
         if CAM_BACKEND == "picamera2":
             from . import exif
             from .config import PI_NAME
-            if ctrl.get("hflip") or ctrl.get("vflip"):
-                img = img.transpose(Image.ROTATE_180) if ctrl.get("hflip") and ctrl.get("vflip") else \
-                      img.transpose(Image.FLIP_LEFT_RIGHT if ctrl.get("hflip") else Image.FLIP_TOP_BOTTOM)
+            look = {k: ctrl[k] for k in ("tint", "warmth", "hflip", "vflip", "film_filter", "film_strength")}
+            if ocv_pipeline.needs_ocv(look):
+                # What the live view shows is what gets saved: film look, tint,
+                # warmth and flips, applied once at full resolution.
+                bgr = np.asarray(img)[:, :, ::-1]
+                img = Image.fromarray(np.ascontiguousarray(
+                    ocv_pipeline.apply_ocv_array(np.ascontiguousarray(bgr), look)[:, :, ::-1]))
+            what = description or ("Timelapse frame" if prefix.startswith("tl") else "Photo")
+            if look.get("film_filter", "none") != "none":
+                what += f" · {look['film_filter']} look"
             blob = exif.build(
                 when=now, make="Raspberry Pi", model=self.model,
-                description=description or ("Timelapse frame" if prefix.startswith("tl") else "Photo"),
+                description=what,
                 width=img.width, height=img.height, md=md, pi_name=PI_NAME,
                 manual_exposure=ctrl.get("exposure_time", 0) > 0,
                 manual_wb=ctrl.get("awb_mode", "auto") != "auto")
