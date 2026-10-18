@@ -15,6 +15,7 @@ from PIL import Image
 from .config import (
     SNAPSHOT_DIR, RESOLUTIONS, CAM_CTRL_DEFAULTS,
     DEFAULT_RESOLUTION, CAM_BACKEND, V4L2_MODE, STREAM_JPEG_QUALITY,
+    STREAM_QUALITY_WIFI, STREAM_QUALITY_ETHERNET, ETHERNET_INTERFACE, LINK_CHECK_S,
 )
 from .backends import ocv_pipeline, picamera2_backend, v4l2_opencv, v4l2_passthrough
 from .postprocess import postprocess_jpeg
@@ -24,6 +25,24 @@ from .stream import StreamOutput
 # JPEG re-encode quality for effects + v4l2 snapshots (baseline).
 JPEG_QUALITY = 85
 STILL_CAPTURE_TIMEOUT_S = 5   # was 15 — cron retries in 3 min so fail fast
+
+
+def _link_type(iface):
+    """"ethernet" when the cable is in and the port has an IPv4 address, else "wifi"."""
+    try:
+        with open(f"/sys/class/net/{iface}/carrier") as f:
+            if f.read().strip() != "1":
+                return "wifi"
+        import fcntl, socket, struct
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            fcntl.ioctl(sock.fileno(), 0x8915, struct.pack("256s", iface.encode()[:15]))  # SIOCGIFADDR
+        return "ethernet"
+    except OSError:
+        return "wifi"
+
+
+def _quality_for(link):
+    return STREAM_QUALITY_ETHERNET if link == "ethernet" else STREAM_QUALITY_WIFI
 
 
 # Module-level shared state — kept at this scope for backward compatibility
@@ -58,7 +77,33 @@ class CameraManager:
         self._still_done = threading.Event()
         self._still_img = None
 
+        # Timelapse focus lock: while True the picamera2 backend keeps the lens
+        # in manual (AfMode 0) even when it re-applies the user's controls after
+        # each still, which used to switch continuous AF back on after frame 1.
+        self.af_locked = False
+
+        # Live-feed JPEG quality follows the network link: higher on ethernet.
+        self.link = _link_type(ETHERNET_INTERFACE)
+        self.stream_quality = _quality_for(self.link)
+
         threading.Thread(target=self._capture_loop, daemon=True, name="capture").start()
+        if CAM_BACKEND == "picamera2":
+            threading.Thread(target=self._watch_link, daemon=True, name="link-watch").start()
+
+    def _watch_link(self):
+        """Re-pick the stream quality when ethernet is plugged in or pulled."""
+        while not self._stop.wait(LINK_CHECK_S):
+            link = _link_type(ETHERNET_INTERFACE)
+            if link == self.link:
+                continue
+            q = _quality_for(link)
+            logging.getLogger(__name__).warning(
+                "network link %s -> %s: live-feed JPEG quality %d -> %d",
+                self.link, link, self.stream_quality, q)
+            changed = q != self.stream_quality
+            self.link, self.stream_quality = link, q
+            if changed:
+                self._restart.set()     # the capture loop rebuilds the encoder (~1 s blip)
 
     # ── Handle helpers (backends call these) ───────────────────────────────
     def set_handle(self, handle):
@@ -181,7 +226,7 @@ class CameraManager:
                 v4l2_passthrough.apply_controls(None, c)
             return
         if CAM_BACKEND == "picamera2":
-            picamera2_backend.apply_controls(handle, c)
+            picamera2_backend.apply_controls(handle, c, af_locked=self.af_locked)
         else:
             v4l2_opencv.apply_controls(handle, c)
 

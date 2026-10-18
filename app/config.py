@@ -50,6 +50,12 @@ if DEFAULT_RESOLUTION not in RESOLUTIONS:
 # Quality for the live stream served by /api/frame (v4l2 backend only).
 # picamera2 backend uses STREAM_BITRATE instead — bitrate controls quality there.
 STREAM_JPEG_QUALITY = max(1, min(95, int(_cfg["camera"].get("stream_quality", 60))))
+# picamera2 live feed: quality follows the network link (checked every LINK_CHECK_S).
+# Wifi tops out around 5 MB/s on pi4, so higher quality there costs frame rate.
+STREAM_QUALITY_WIFI     = max(1, min(95, int(_cfg["camera"].get("stream_quality_wifi", STREAM_JPEG_QUALITY))))
+STREAM_QUALITY_ETHERNET = max(1, min(95, int(_cfg["camera"].get("stream_quality_ethernet", 90))))
+ETHERNET_INTERFACE      = str(_cfg["camera"].get("ethernet_interface", "eth0"))
+LINK_CHECK_S            = 10
 
 # Bitrate for the MJPEGEncoder live feed (picamera2 backend only).
 STREAM_BITRATE = max(1_000_000, int(_cfg["camera"].get("stream_bitrate", 10_000_000)))
@@ -67,10 +73,17 @@ SECRET_KEY         = _dash.get("secret_key", "")
 
 # ── Servo pan/tilt ────────────────────────────────────────────────────────────
 _servo         = _cfg.get("servo", {})
-SERVO_ENABLED  = bool(_servo.get("enabled", False))
-SERVO_PAN_PIN  = int(_servo.get("pan_pin",  18))
-SERVO_TILT_PIN = int(_servo.get("tilt_pin", 19))
-SERVO_SPEED    = max(0.0, min(1.0, float(_servo.get("speed", 0.8))))
+SERVO_ENABLED     = bool(_servo.get("enabled", False))
+SERVO_SPEED       = max(0.0, min(1.0, float(_servo.get("speed", 0.8))))
+SERVO_DRIVER_PATH = str(_servo.get("driver_path", "/home/chris/pantilt"))   # pins + limits live there
+SERVO_SWIPE       = bool(_servo.get("swipe", False))          # fullscreen drag joystick (views are the main control)
+SERVO_NUDGE_PAN   = float(_servo.get("nudge_pan_deg", 5))     # arrow-button step sizes
+SERVO_NUDGE_TILT  = float(_servo.get("nudge_tilt_deg", 4))
+
+# ── Greenhouse proxy ──────────────────────────────────────────────────────────
+_gh             = _cfg.get("greenhouse", {})
+GREENHOUSE_HOST = _gh.get("host", "")
+GREENHOUSE_PORT = int(_gh.get("port", 5000))
 
 # ── Camera schedule ───────────────────────────────────────────────────────────
 _sched             = _cfg.get("schedule", {})

@@ -1,0 +1,247 @@
+/* ── Pan/tilt views (shared by the camera page and the dashboard) ────────────
+   Uses the page's colour tokens (--surface, --green, ...).  Two forms:
+   .ptz-chips  one-tap view pills laid over a picture
+   .ptz-panel  thumbnails + fine-tune arrows + save/edit, below a picture   */
+
+/* ── Chips ─────────────────────────────────────────────────────────────────── */
+.ptz-chips {
+  position: absolute;
+  left: 12px; right: 12px; bottom: 44px;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  z-index: 5;
+  pointer-events: none;           /* only the pills take taps */
+  line-height: normal;
+}
+.ptz-chip {
+  pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(4,10,4,0.62);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  color: #fff;
+  font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  touch-action: manipulation;
+}
+.ptz-chip:hover  { border-color: rgba(255,255,255,0.4); }
+.ptz-chip:active { transform: scale(0.96); }
+.ptz-chip.is-here {
+  background: var(--green-md, #16a34a);
+  border-color: var(--green-lt, #4ade80);
+}
+.ptz-chip.is-going { border-color: var(--amber-lt, #fbbf24); animation: ptz-pulse 1s ease-in-out infinite; }
+.ptz-chip .ptz-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; opacity: 0.55;
+}
+.ptz-chip.is-here .ptz-dot  { opacity: 1; }
+.ptz-chip.is-going .ptz-dot { background: var(--amber-lt, #fbbf24); opacity: 1; }
+.ptz-chips.big .ptz-chip { padding: 9px 16px; font-size: 14px; }
+
+/* ── Panel ─────────────────────────────────────────────────────────────────── */
+.ptz-panel {
+  line-height: normal;
+  color: var(--text, #edf6ed);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.ptz-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px;
+}
+.ptz-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted, #87a887);
+}
+.ptz-status { font-size: 12px; color: var(--muted, #87a887); }
+.ptz-status.warn { color: var(--amber-lt, #fbbf24); }
+.ptz-status.err  { color: var(--red, #ef4444); }
+.ptz-edit-btn {
+  margin-left: auto;
+  background: none; border: 1px solid var(--border, #1a2e1a); border-radius: 8px;
+  color: var(--muted, #87a887); font-size: 12px; font-weight: 600;
+  padding: 5px 10px; cursor: pointer;
+}
+.ptz-edit-btn.on { color: var(--green-lt, #4ade80); border-color: var(--green-md, #16a34a); }
+
+.ptz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.ptz-card {
+  position: relative;
+  max-width: 300px;               /* one or two views should not become giant tiles */
+  display: flex; flex-direction: column;
+  padding: 0; overflow: hidden;
+  border-radius: 10px;
+  border: 1.5px solid var(--border, #1a2e1a);
+  background: var(--surface2, #132013);
+  color: inherit; text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+  touch-action: manipulation;
+}
+.ptz-card:hover  { border-color: var(--green-dk, #166534); }
+.ptz-card:active { transform: scale(0.98); }
+.ptz-card.is-here  { border-color: var(--green, #22c55e); box-shadow: 0 0 0 1px var(--green-dk, #166534); }
+.ptz-card.is-going { border-color: var(--amber-lt, #fbbf24); animation: ptz-pulse 1s ease-in-out infinite; }
+.ptz-thumb {
+  width: 100%; aspect-ratio: 16 / 9;
+  background: #000 center / cover no-repeat;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--dim, #4a6b4a); font-size: 12px;
+}
+.ptz-card-name {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px;
+  font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ptz-tag {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 6px;
+}
+.is-here  .ptz-tag { background: rgba(34,197,94,0.18);  color: var(--green-lt, #4ade80); }
+.is-going .ptz-tag { background: rgba(251,191,36,0.15); color: var(--amber-lt, #fbbf24); }
+
+/* edit mode: per-card tools */
+.ptz-card-tools {
+  display: none;
+  gap: 6px; padding: 0 8px 8px;
+}
+.ptz-panel.editing .ptz-card-tools { display: flex; }
+.ptz-panel.editing .ptz-card { cursor: default; }
+.ptz-tool {
+  flex: 1;
+  padding: 6px 4px;
+  border-radius: 7px; border: 1px solid var(--border, #1a2e1a);
+  background: var(--surface, #0d180d); color: var(--text, #edf6ed);
+  font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.ptz-tool.danger { color: var(--red, #ef4444); flex: 0 0 auto; padding: 6px 9px; }
+.ptz-add {
+  display: none;
+  align-items: center; justify-content: center; flex-direction: column; gap: 4px;
+  min-height: 110px;
+  border: 1.5px dashed var(--border, #1a2e1a); border-radius: 10px;
+  background: none; color: var(--muted, #87a887);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.ptz-add span { font-size: 22px; line-height: 1; }
+.ptz-panel.editing .ptz-add { display: flex; }
+
+/* fine-tune row */
+.ptz-tune {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-top: 12px;
+}
+.ptz-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 40px);
+  grid-template-rows: repeat(3, 34px);
+  gap: 4px;
+}
+.ptz-arrow {
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; border: 1px solid var(--border, #1a2e1a);
+  background: var(--surface2, #132013); color: var(--text, #edf6ed);
+  cursor: pointer; touch-action: manipulation; padding: 0;
+}
+.ptz-arrow:active { background: var(--green-dk, #166534); }
+.ptz-arrow:disabled { opacity: 0.3; cursor: default; }
+.ptz-arrow.up    { grid-column: 2; grid-row: 1; }
+.ptz-arrow.left  { grid-column: 1; grid-row: 2; }
+.ptz-arrow.right { grid-column: 3; grid-row: 2; }
+.ptz-arrow.down  { grid-column: 2; grid-row: 3; }
+.ptz-pad-mid {
+  grid-column: 2; grid-row: 2;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: var(--dim, #4a6b4a); letter-spacing: 0.05em; text-transform: uppercase;
+}
+.ptz-tune-side { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 8px; }
+.ptz-hint { font-size: 12px; color: var(--muted, #87a887); line-height: 1.4; }
+.ptz-save-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.ptz-btn {
+  padding: 8px 12px;
+  border-radius: 9px; border: 1px solid var(--border, #1a2e1a);
+  background: var(--surface2, #132013); color: var(--text, #edf6ed);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.ptz-btn.primary {
+  background: linear-gradient(135deg, var(--green-dk, #166534), var(--green-md, #16a34a));
+  border-color: var(--green-md, #16a34a); color: #fff;
+}
+
+/* small dialog (rename / new view / confirm) */
+.ptz-dialog-back {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.ptz-dialog {
+  width: 100%; max-width: 340px;
+  background: var(--surface, #0d180d); border: 1px solid var(--border, #1a2e1a);
+  border-radius: 14px; padding: 18px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  color: var(--text, #edf6ed);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.ptz-dialog h3 { font-size: 15px; margin: 0 0 6px; }
+.ptz-dialog p  { font-size: 13px; color: var(--muted, #87a887); margin: 0 0 12px; line-height: 1.4; }
+.ptz-dialog input {
+  width: 100%; box-sizing: border-box;
+  padding: 10px 12px; margin-bottom: 14px;
+  border-radius: 8px; border: 1px solid var(--border, #1a2e1a);
+  background: var(--surface2, #132013); color: var(--text, #edf6ed);
+  font-size: 16px;   /* 16px stops iOS zooming in */
+}
+.ptz-dialog-btns { display: flex; justify-content: flex-end; gap: 8px; }
+
+@keyframes ptz-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.0); }
+  50%      { box-shadow: 0 0 0 3px rgba(251,191,36,0.35); }
+}
+
+/* ── Placement on the host pages ─────────────────────────────────────────────── */
+.ptz-chips[hidden], .ptz-panel[hidden] { display: none !important; }
+
+/* camera page: a card under the feed */
+#ptz-panel-host .ptz-panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; margin-bottom: 12px;
+}
+/* dashboard drawer: a section between the picture and the action buttons */
+.drawer-views .ptz-panel { padding: 14px 18px 4px; }
+
+/* chips over a feed: fullscreen only (normal view has the panel underneath) */
+.ptz-chips.fs-only { display: none; top: 64px; bottom: auto; justify-content: center; }
+.feed-wrap:fullscreen .ptz-chips.fs-only,
+body.ios-fs .ptz-chips.fs-only,
+.drawer-stream-wrap:fullscreen .ptz-chips.fs-only,
+body.drawer-fake-fs .ptz-chips.fs-only { display: flex; }
+/* fullscreen shows only the picture (+ chips) */
+body.drawer-fake-fs .drawer-views { display: none !important; }
+/* camera page fullscreen: sit above the bottom buttons, clear of the top-left controls */
+#feed-wrap .ptz-chips.fs-only { top: auto; bottom: 96px; }
+
+/* phones: one row of normal-size chips that scrolls sideways instead of wrapping over the picture */
+@media (max-width: 640px) {
+  .ptz-chips {
+    flex-wrap: nowrap; overflow-x: auto; pointer-events: auto;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .ptz-chips::-webkit-scrollbar { display: none; }
+  .ptz-chips .ptz-chip { flex-shrink: 0; }
+  .ptz-chips.big .ptz-chip { padding: 7px 13px; font-size: 13px; }
+  .ptz-chips.fs-only { justify-content: flex-start; }
+}
+/* portrait phone fullscreen: the picture is letterboxed, so use the empty band under the top controls */
+@media (max-width: 640px) and (orientation: portrait) {
+  #feed-wrap .ptz-chips.fs-only { top: 118px; bottom: auto; }
+}

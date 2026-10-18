@@ -42,6 +42,19 @@ logs_mod.configure(LOG_DIR)
 _log = logging.getLogger(__name__)
 
 
+SHUTTER_SPEEDS = [
+    ("Auto", 0), ("1/8000", 125), ("1/6400", 156), ("1/5000", 200),
+    ("1/4000", 250), ("1/3200", 313), ("1/2500", 400), ("1/2000", 500),
+    ("1/1600", 625), ("1/1250", 800), ("1/1000", 1000), ("1/800", 1250),
+    ("1/640", 1563), ("1/500", 2000), ("1/400", 2500), ("1/320", 3125),
+    ("1/250", 4000), ("1/200", 5000), ("1/160", 6250), ("1/125", 8000),
+    ("1/100", 10000), ("1/80", 12500), ("1/60", 16667), ("1/50", 20000),
+    ("1/40", 25000), ("1/30", 33333), ("1/25", 40000), ("1/20", 50000),
+    ("1/15", 66667), ("1/13", 76923), ("1/10", 100000), ("1/8", 125000),
+    ("1/6", 166667), ("1/5", 200000), ("1/4", 250000), ("1/3", 333333),
+    ("1/2", 500000), ("0.6s", 600000), ("0.8s", 800000), ("1s", 1000000),
+]
+
 # Wire the recorder into the camera stream so it captures what the user sees
 camera.output.recorder = video_recorder
 scheduler.start(camera)
@@ -56,6 +69,10 @@ app.config["API_TOKEN"] = API_TOKEN
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.register_blueprint(dashboard_bp)
+
+if GREENHOUSE_HOST:
+    from .greenhouse import greenhouse as greenhouse_bp
+    app.register_blueprint(greenhouse_bp)
 
 
 # ── Auth guard on every mutating request ──────────────────────────────────────
@@ -222,6 +239,8 @@ def gallery():
         for entry in it:
             if entry.name.endswith(".thumb.jpg"):
                 name = entry.name.replace(".thumb.jpg", ".jpg")
+                # Full-size photos are archived to bigpc nightly; the thumb
+                # stays behind as local history.
                 try:
                     st = (SNAPSHOT_DIR / name).stat()
                     local, size = True, st.st_size
@@ -372,6 +391,10 @@ def get_cam_controls():
 @app.route("/api/camera_controls", methods=["POST"])
 def set_cam_controls():
     payload = request.json or {}
+    if "exposure_index" in payload:
+        idx = int(payload.pop("exposure_index"))
+        idx = max(0, min(idx, len(SHUTTER_SPEEDS) - 1))
+        payload["exposure_time"] = SHUTTER_SPEEDS[idx][1]
     with cam_ctrl_lock:
         for k, v in payload.items():
             if k in CAM_CTRL_DEFAULTS:
@@ -390,20 +413,88 @@ def cam_ctrl_defaults():
 
 @app.route("/api/servo/move", methods=["POST"])
 def servo_move():
-    payload = request.json or {}
-    servo.move(float(payload.get("pan", 0.0)), float(payload.get("tilt", 0.0)))
+    data = request.get_json(silent=True) or {}
+    servo.move(float(data.get("pan", 0.0)), float(data.get("tilt", 0.0)), data.get("seq"))
     return jsonify({"ok": True})
 
 
 @app.route("/api/servo/stop", methods=["POST"])
 def servo_stop():
-    servo.stop()
+    servo.stop((request.get_json(silent=True) or {}).get("seq"))
     return jsonify({"ok": True})
 
 
 @app.route("/api/servo/status")
 def servo_status():
     return jsonify(servo.status())
+
+
+# ── Pan/tilt views (saved camera positions) ────────────────────────────────────
+# GET /api/ptz returns everything the views UI needs; moves return at once and
+# run in the background (poll /api/ptz).  Cameras without a rig answer
+# {"enabled": false}, and the dashboard hides the views for them.
+
+servo.attach(frame_source=camera.get_stream_frame,
+             timelapse_running=lambda: timelapse.running)
+
+
+def _ptz_call(fn, *args, **kwargs):
+    try:
+        return jsonify({"ok": True, "result": fn(*args, **kwargs), "state": servo.ptz_state()})
+    except KeyError:
+        return jsonify({"ok": False, "error": "no such view"}), 404
+    except (RuntimeError, ValueError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+
+
+@app.route("/api/ptz")
+def ptz_state():
+    return jsonify(servo.ptz_state())
+
+
+@app.route("/api/ptz/goto", methods=["POST"])
+def ptz_goto():
+    return _ptz_call(servo.goto, (request.get_json(silent=True) or {}).get("id", ""))
+
+
+@app.route("/api/ptz/nudge", methods=["POST"])
+def ptz_nudge():
+    data = request.get_json(silent=True) or {}
+    return _ptz_call(servo.nudge, float(data.get("pan", 0)), float(data.get("tilt", 0)))
+
+
+@app.route("/api/ptz/views", methods=["POST"])
+def ptz_add_view():
+    name = str((request.get_json(silent=True) or {}).get("name", "")).strip() or "New view"
+    return _ptz_call(servo.add_view, name)
+
+
+@app.route("/api/ptz/views/order", methods=["POST"])
+def ptz_reorder():
+    return _ptz_call(servo.reorder_views, (request.get_json(silent=True) or {}).get("ids", []))
+
+
+@app.route("/api/ptz/views/<view_id>", methods=["POST"])
+def ptz_update_view(view_id):
+    data = request.get_json(silent=True) or {}
+    return _ptz_call(servo.update_view, view_id, name=data.get("name"),
+                     save_view=bool(data.get("save_view")))
+
+
+@app.route("/api/ptz/views/<view_id>", methods=["DELETE"])
+def ptz_delete_view(view_id):
+    return _ptz_call(servo.delete_view, view_id)
+
+
+@app.route("/api/ptz/thumb/<view_id>.jpg")
+def ptz_thumb(view_id):
+    try:
+        path = servo.thumb_path(view_id)
+    except RuntimeError:
+        return "", 404
+    if not path.exists():
+        return "", 404
+    return send_from_directory(path.parent, path.name, max_age=0)
 
 
 # ── System stats + info ────────────────────────────────────────────────────────
@@ -421,4 +512,6 @@ def pi_info():
     info = get_pi_info()
     info["audio_available"] = AUDIO_AVAILABLE
     info["cam_backend"]     = CAM_BACKEND
+    info["network_link"]    = camera.link
+    info["stream_quality"]  = camera.stream_quality
     return jsonify(info)

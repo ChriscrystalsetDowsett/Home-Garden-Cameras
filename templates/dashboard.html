@@ -9,56 +9,82 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
 <title>Home Garden Cameras</title>
 <!-- CSS/JS ?v= must be bumped together — see CLAUDE.md "Static asset cache-busting". -->
-<link rel="stylesheet" href="/static/dashboard.css?v=14">
+<link rel="stylesheet" href="/static/dashboard.css?v=16">
+<link rel="stylesheet" href="/static/ptz.css?v=2">
 </head>
 <body>
 
-<div class="container">
+<div class="shell">
 
-  <header>
+  <header class="app-bar">
     <div class="header-brand">
       <div class="cam-icon">🌿</div>
       <div class="header-text">
-        <h1>Home Garden Cameras</h1>
+        <h1>Garden Cameras</h1>
         <p>growing memories</p>
       </div>
     </div>
+
+    <div class="app-bar-right">
+      <span class="fleet-pill" id="fleet-pill" title="Cameras online">
+        <span class="fleet-dot" id="fleet-dot"></span>
+        <span id="fleet-count">—</span>
+      </span>
+      <span class="app-clock" id="app-clock"></span>
+      <nav class="app-nav">
+        <a href="https://greenhouse.chrisdowsett.com" target="_blank" rel="noopener">Greenhouse Monitor</a>
+        <a href="https://greenhousejournal.chrisdowsett.com" target="_blank" rel="noopener">Journal</a>
+      </nav>
+    </div>
   </header>
 
-  <div class="cam-grid">
-    {% for cam in cameras %}
-    <div class="cam-tile"
-         data-idx="{{ loop.index0 }}"
-         data-name="{{ cam.name | e }}"
-         data-full-url="/camera/{{ loop.index0 }}/"
-         onclick="openDrawer(this)">
+  <main class="wall">
+    <div class="cam-grid" id="cam-grid">
+      {% for cam in cameras %}
+      <div class="cam-tile{{ ' is-hero' if loop.index0 == hero_idx else '' }}"
+           data-idx="{{ loop.index0 }}"
+           data-name="{{ cam.name | e }}"
+           data-full-url="/camera/{{ loop.index0 }}/"
+           onclick="openDrawer(this)">
 
-      <div class="tile-stream-wrap">
-        <img class="tile-stream-img"
-             src=""
-             alt="{{ cam.name | e }}"
-             onload="onTileLoad(this)"
-             onerror="onTileError(this)">
-        <div class="tile-offline-badge">Offline</div>
-        <div class="tile-badges" id="tile-badges-{{ loop.index0 }}"></div>
-        <div class="tile-hint">Tap to open controls</div>
+        <div class="tile-stream-wrap">
+          <img class="tile-stream-img"
+               alt="{{ cam.name | e }}"
+               onload="onTileLoad(this)"
+               onerror="onTileError(this)">
+          <div class="tile-offline-badge">Offline</div>
+          <div class="tile-badges" id="tile-badges-{{ loop.index0 }}"></div>
+
+          <button class="tile-promote" title="Make main view"
+                  onclick="promoteTile(event, this)" aria-label="Make main view">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="10 2 14 2 14 6"/>
+              <polyline points="6 14 2 14 2 10"/>
+              <line x1="14" y1="2" x2="9" y2="7"/>
+              <line x1="2" y1="14" x2="7" y2="9"/>
+            </svg>
+          </button>
+
+          <div class="tile-footer">
+            <span class="tile-dot" id="tile-dot-{{ loop.index0 }}"></span>
+            <span class="tile-name">{{ cam.name | e }}</span>
+            <span class="tile-host">{{ cam.host }}</span>
+            <span class="tile-open">Controls →</span>
+          </div>
+        </div>
+
       </div>
-
-      <div class="tile-footer">
-        <span class="tile-name">{{ cam.name | e }}</span>
-        <span class="tile-dot" id="tile-dot-{{ loop.index0 }}"></span>
+      {% else %}
+      <div class="no-cameras">
+        <p>No cameras configured.</p>
+        <p>Add a <code>cameras:</code> list to <code>config/settings.yaml</code> and restart the app.</p>
       </div>
-
+      {% endfor %}
     </div>
-    {% else %}
-    <div class="no-cameras">
-      <p>No cameras configured.</p>
-      <p>Add a <code>cameras:</code> list to <code>config/settings.yaml</code> and restart the app.</p>
-    </div>
-    {% endfor %}
-  </div>
+  </main>
 
-</div><!-- /.container -->
+</div><!-- /.shell -->
 
 
 <!-- ── Bottom drawer ──────────────────────────────────────────────────────── -->
@@ -74,7 +100,7 @@
   </div>
 
   <div class="drawer-stream-wrap">
-    <img id="drawer-stream-img" src="" alt="Live feed"
+    <img id="drawer-stream-img" alt="Live feed"
          onload="onDrawerStreamLoad()" onerror="onDrawerStreamError()">
     <div id="drawer-offline-msg">Camera offline</div>
 
@@ -115,6 +141,9 @@
     </button>
   </div>
   <audio id="drawer-audio" style="display:none"></audio>
+
+  <!-- Pan/tilt views (filled by static/ptz.js for cameras that have a rig) -->
+  <div class="drawer-views ptz-host" id="drawer-views"></div>
 
   <div class="drawer-actions">
     <button class="action-btn photo-btn" id="btn-photo" onclick="doPhoto()">
@@ -170,6 +199,7 @@
 <div class="toast" id="toast"></div>
 
 
-<script src="/static/dashboard.js?v=14"></script>
+<script src="/static/ptz.js?v=2"></script>
+<script src="/static/dashboard.js?v=16"></script>
 </body>
 </html>

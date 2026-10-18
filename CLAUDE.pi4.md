@@ -95,7 +95,7 @@ home-garden-cameras/
     config.py    Loads settings.yaml — single source of truth for all constants
     dashboard.py Dashboard blueprint + proxy routes
     recorder.py  VideoRecorder, AudioStreamer classes
-    servo.py     ServoController (stub — no GPIO touched until SERVO_ENABLED=true)
+    servo.py     ServoController: adapts the swipe joystick to the pantilt driver (~/pantilt)
     timelapse.py TimelapseCapturer
     scheduler.py Camera on/off schedule
     stats.py     Pi system info
@@ -193,7 +193,10 @@ Every `<link>` and `<script>` in the HTML templates uses a `?v=N` query string:
 - If the camera stops producing frames after a USB reconnect, a physical replug may be needed; ffmpeg/OpenCV cannot always recover without it.
 
 ### Servo
-- `SERVO_ENABLED = false` in `settings.yaml` by default. In stub mode all commands are logged and no GPIO is touched. Do not enable without hardware connected.
+- **pi4 has the rig (2026-10-10):** `servo.enabled: true` in settings.yaml. Hardware driver = `~/pantilt` (outside this repo; pins, limits, speeds in `~/pantilt/config.yaml`, wiring + tuning in its README). Pan = 28BYJ-48 stepper GPIO17/27/22/23, tilt = SG90 GPIO18. Position is software-tracked in `~/pantilt/state.json`; a lock file lets `~/pantilt/cli.py` run while this app is up.
+- **Saved views (main control, 2026-10-10):** `/api/ptz` (state + views), `/api/ptz/goto {id}`, `/api/ptz/nudge {pan,tilt}`, `/api/ptz/views` (add / rename / re-aim / delete / order), `/api/ptz/thumb/<id>.jpg`. Moves run on a worker thread (newest request wins). UI = `static/ptz.js` + `static/ptz.css`, shared by index.html (panel under the feed + fullscreen chips) and dashboard.html (tile chips + drawer panel). Every camera is wired the same way; a camera without a rig answers enabled:false or 404, and nothing is drawn. The dashboard copy on pi5 must get the same ptz.js/ptz.css/dashboard.* files.
+- Swipe protocol (joystick, off unless `servo.swipe: true`): `/api/servo/move` {pan, tilt, seq} velocities -1..1, resent every 400 ms while held; `/api/servo/stop` {seq}. seq = send time in ms; stale (reordered) commands are dropped; the rig stops itself after 1.5 s without commands.
+- Other Pis: leave `servo.enabled` false (stub mode, no GPIO touched).
 
 ---
 
@@ -252,6 +255,6 @@ Every `<link>` and `<script>` in the HTML templates uses a `?v=N` query string:
 
 8. **Using `vw` instead of `vmin` for circular overlay buttons.** In landscape on an iPhone, `vw` equals the long dimension (~844px), so a `10vw` button hits 84px. `vmin` uses the short dimension (~390px) and stays proportional in both orientations.
 
-9. **Touching GPIO with `SERVO_ENABLED = false`.** The servo stub is intentionally a no-op. Do not add direct `RPi.GPIO` or `pigpio` calls outside `servo.py`.
+9. **Touching GPIO outside the pantilt driver.** All rig GPIO goes through ~/pantilt (via `servo.py`). Do not add direct `RPi.GPIO`/`pigpio`/`lgpio` calls in this app.
 
 10. **Pushing to GitHub instead of testing locally first.** The other Pis pull from `main`. A broken push breaks all camera nodes. Always verify the service starts and the feed loads on the Pi 5 before pushing.

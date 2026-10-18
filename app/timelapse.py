@@ -1,5 +1,5 @@
 """Timelapse capture manager and ffmpeg compilation."""
-import threading, time, subprocess
+import logging, threading, time, subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -159,22 +159,23 @@ def _lock_focus():
         if cam_ctrl.get("af_mode", "continuous") == "manual":
             return
     try:
-        with camera.lock:
-            handle = camera._handle
+        handle = camera.get_handle()
         if handle is None:
             return
         # One-shot AF trigger, then lock the lens position
         handle.set_controls({"AfMode": 1, "AfTrigger": 0})
         time.sleep(1.5)          # allow the lens to reach focus
         handle.set_controls({"AfMode": 0})
-    except Exception:
-        pass
+        camera.af_locked = True  # stills re-apply controls; keep the lens fixed
+    except Exception as e:
+        logging.getLogger(__name__).warning("timelapse focus lock failed: %s", e)
 
 
 def _unlock_focus():
     """Restore the user's configured AF mode once capture is done."""
     if CAM_BACKEND != "picamera2":
         return
+    camera.af_locked = False
     try:
         with cam_ctrl_lock:
             c = dict(cam_ctrl)

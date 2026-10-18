@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Greenhouse Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0c1a0e;
+      --surface:  #111f13;
+      --surface2: #1e3624;
+      --border:   #1e3624;
+      --text:     #ddeedd;
+      --muted:    #4d7a52;
+      --green:    #5ab56e;
+      --red:      #8c3010;
+      --temp-col: #d4832a;
+      --hum-col:  #5ab56e;
+      --green-lt: #a8e0b4;
+      --green-md: #2d5a32;
+    }
+    html { background: var(--bg); }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 1.5rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .header-brand { display: flex; align-items: center; gap: 0.75rem; }
+    .header-brand h1 { font-size: 1.5rem; font-weight: 600; letter-spacing: 0.03em; }
+    .header-brand .sub { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+    .back-link {
+      display: flex; align-items: center; gap: 0.4rem;
+      color: var(--muted); font-size: 0.82rem; text-decoration: none;
+      padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .back-link:hover { color: var(--green); border-color: var(--green); }
+    .status-row {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.8rem; color: var(--muted);
+    }
+    #status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--red); transition: background 0.4s;
+      flex-shrink: 0;
+    }
+    #status-dot.live { background: var(--green); animation: pulse-green 2s infinite; }
+    @keyframes pulse-green {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.5; }
+    }
+    #last-update { font-size: 0.78rem; color: var(--muted); margin-bottom: 1.2rem; }
+
+    /* ── Sensor cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 480px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem 1.75rem;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 0;
+    }
+    .card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    }
+    .card.temp::before { background: var(--temp-col); }
+    .card.hum::before  { background: var(--hum-col); }
+    .card-label-col { display: flex; flex-direction: column; justify-content: center; min-width: 90px; }
+    .card-label { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+    .card-range { font-size: 0.72rem; color: var(--muted); margin-top: 0.4rem; line-height: 1.5; }
+    .card-sep { width: 1px; background: var(--border); align-self: stretch; margin: 0 1.25rem; }
+    .card-data-col { flex: 1; }
+    .card-value { font-size: 4rem; font-weight: 500; line-height: 1; }
+    .card-unit { font-size: 1.6rem; font-weight: 400; color: var(--muted); }
+    .card.temp .card-value { color: var(--temp-col); }
+    .card.hum  .card-value { color: var(--hum-col); }
+    .card-status { font-size: 1rem; color: var(--muted); margin-top: 0.3rem; }
+
+    /* ── Charts ── */
+    .chart-panels {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 700px) { .chart-panels { grid-template-columns: 1fr; } }
+    .chart-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+    .chart-panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 0.75rem; gap: 0.5rem; flex-wrap: wrap;
+    }
+    .chart-title {
+      font-size: 0.78rem; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .chart-title.temp { color: var(--temp-col); }
+    .chart-title.hum  { color: var(--hum-col); }
+    .chart-panel-tabs { display: flex; gap: 4px; }
+    .chart-tab {
+      font-size: 0.72rem; padding: 3px 10px;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 999px; color: var(--muted); cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .chart-tab.active {
+      background: var(--surface2); color: var(--green);
+      border-color: var(--surface2);
+    }
+    .chart-tab-content { display: none; }
+    .chart-tab-content.active { display: block; }
+    .chart-wrap { height: 140px; }
+
+    /* ── Climate control section ── */
+    .section-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    .section-bar {
+      width: 100%; text-align: left;
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 1rem 1.25rem;
+      background: var(--surface2); border: none; cursor: pointer;
+      color: var(--text); font-size: 0.88rem; font-weight: 600;
+    }
+    .section-bar .spacer { flex: 1; }
+    .section-bar .chevron {
+      width: 16px; height: 16px; transition: transform 0.25s; flex-shrink: 0;
+    }
+    .section-bar.open .chevron { transform: rotate(180deg); }
+    .section-body { display: none; padding: 1.25rem; }
+    .section-body.open { display: block; }
+
+    /* master auto toggle */
+    .auto-master {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1rem; padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .auto-master span { font-size: 0.82rem; color: var(--muted); }
+    .toggle-btn {
+      padding: 5px 14px; border-radius: 999px; border: 1px solid var(--border);
+      font-size: 0.78rem; font-weight: 600; cursor: pointer;
+      background: var(--surface2); color: var(--text);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .toggle-btn.active { background: var(--green-md); border-color: var(--green); color: var(--green-lt); }
+
+    /* device grid */
+    .device-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+    @media (max-width: 600px) { .device-grid { grid-template-columns: 1fr; } }
+    .device {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+    .device-head {
+      display: flex; align-items: flex-start;
+      justify-content: space-between; gap: 0.5rem; margin-bottom: 0.75rem;
+    }
+    .device-name { font-size: 0.88rem; font-weight: 600; }
+    .device-sub  { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+    .device-state {
+      display: flex; align-items: center; gap: 0.4rem;
+      font-size: 0.75rem; white-space: nowrap;
+      padding: 3px 9px; border-radius: 999px;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .device-state .dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
+    }
+    .device-state.on .dot { background: var(--green); }
+    .device-state.on { border-color: var(--green); color: var(--green-lt); }
+    .device-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .trigger-tag {
+      font-size: 0.68rem; color: var(--muted);
+      padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
+    }
+    .mode-btns { display: flex; gap: 4px; }
+    .mode-btn {
+      font-size: 0.72rem; padding: 3px 10px;
+      border: 1px solid var(--border); border-radius: 999px;
+      cursor: pointer; background: var(--surface2); color: var(--muted);
+      transition: background 0.15s, color 0.15s;
+    }
+    .mode-btn.active { background: var(--green-md); border-color: var(--green); color: var(--green-lt); }
+    .on-off-btn {
+      display: none; /* shown only in manual mode */
+      font-size: 0.72rem; padding: 3px 12px;
+      border: 1px solid var(--border); border-radius: 999px;
+      cursor: pointer; background: var(--surface2); color: var(--text);
+      transition: background 0.15s;
+    }
+    .on-off-btn:hover { background: var(--surface); }
+
+    /* ── Offline banner ── */
+    #offline-banner {
+      display: none;
+      background: rgba(140,48,16,0.2); border: 1px solid var(--red);
+      border-radius: 8px; padding: 10px 14px; margin-bottom: 1rem;
+      font-size: 0.82rem; color: #ffaa88; text-align: center;
+    }
+    #offline-banner.show { display: block; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-brand">
+    <div>
+      <h1>Greenhouse Monitor</h1>
+      <div class="sub">Pi 4 sensors · served via Pi 5</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+    <div class="status-row">
+      <div id="status-dot"></div>
+      <span id="status-text">Connecting…</span>
+    </div>
+    <a href="/dashboard" class="back-link">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="10 2 4 8 10 14"/>
+      </svg>
+      Cameras
+    </a>
+  </div>
+</header>
+
+<div id="offline-banner">Pi 4 is offline or unreachable — showing last known data</div>
+<p id="last-update">Waiting for data…</p>
+
+<!-- ── Sensor cards ────────────────────────────────────────────────────────── -->
+<div class="cards">
+  <div class="card temp">
+    <div class="card-label-col">
+      <span class="card-label">Temperature</span>
+      <div class="card-range" id="temp-range"></div>
+    </div>
+    <div class="card-sep"></div>
+    <div class="card-data-col">
+      <div class="card-value" id="temp-val">—<span class="card-unit">°C</span></div>
+      <div class="card-status" id="temp-status"></div>
+    </div>
+  </div>
+  <div class="card hum">
+    <div class="card-label-col">
+      <span class="card-label">Humidity</span>
+      <div class="card-range" id="hum-range"></div>
+    </div>
+    <div class="card-sep"></div>
+    <div class="card-data-col">
+      <div class="card-value" id="hum-val">—<span class="card-unit">%</span></div>
+      <div class="card-status" id="hum-status"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Charts ─────────────────────────────────────────────────────────────── -->
+<div class="chart-panels">
+
+  <div class="chart-panel">
+    <div class="chart-panel-header">
+      <span class="chart-title temp">Temperature</span>
+      <div class="chart-panel-tabs">
+        <button class="chart-tab active" onclick="switchTab('temp','hour',this)">Last Hour</button>
+        <button class="chart-tab"        onclick="switchTab('temp','12h',this)">12 Hours</button>
+      </div>
+    </div>
+    <div id="temp-tab-hour" class="chart-tab-content active">
+      <div class="chart-wrap"><canvas id="tempChart"></canvas></div>
+    </div>
+    <div id="temp-tab-12h" class="chart-tab-content">
+      <div class="chart-wrap"><canvas id="tempChart12h"></canvas></div>
+    </div>
+  </div>
+
+  <div class="chart-panel">
+    <div class="chart-panel-header">
+      <span class="chart-title hum">Humidity</span>
+      <div class="chart-panel-tabs">
+        <button class="chart-tab active" onclick="switchTab('hum','hour',this)">Last Hour</button>
+        <button class="chart-tab"        onclick="switchTab('hum','12h',this)">12 Hours</button>
+      </div>
+    </div>
+    <div id="hum-tab-hour" class="chart-tab-content active">
+      <div class="chart-wrap"><canvas id="humChart"></canvas></div>
+    </div>
+    <div id="hum-tab-12h" class="chart-tab-content">
+      <div class="chart-wrap"><canvas id="humChart12h"></canvas></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Climate control ────────────────────────────────────────────────────── -->
+<div class="section-card">
+  <button class="section-bar" id="climate-bar" onclick="toggleClimate()">
+    <span>Climate Control</span>
+    <span class="spacer"></span>
+    <span id="climate-bar-label" style="font-size:0.78rem;color:var(--muted);font-weight:400"></span>
+    <svg class="chevron" viewBox="0 0 16 16" fill="none">
+      <path d="M4 6l4 4 4-4" stroke="#4d7a52" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+  <div class="section-body" id="climate-body">
+    <div class="auto-master">
+      <span>Master automation</span>
+      <button class="toggle-btn" id="master-auto-btn" onclick="toggleMasterAuto()">Off</button>
+    </div>
+    <div class="device-grid" id="device-grid">
+      <!-- populated by JS -->
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Device metadata ───────────────────────────────────────────────────────────
+
+const DEVICES = [
+  { id: 1, key: 'ceiling_fan',  autoKey: 'ceiling_fan_auto',  name: 'Ceiling Fan',  sub: 'Temperature control' },
+  { id: 3, key: 'heater',       autoKey: 'heater_auto',        name: 'Heater',       sub: 'Night heating' },
+  { id: 2, key: 'humidifier_2', autoKey: 'humidifier_2_auto',  name: 'Humidifier',   sub: 'Canopy mist' },
+  { id: 4, key: 'floor_fan',    autoKey: 'floor_fan_auto',     name: 'Floor Fan',    sub: 'Cross-ventilation' },
+];
+
+// ── Chart setup ───────────────────────────────────────────────────────────────
+
+const _cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+const CHART_OPTS = (color, unit, yMin, yMax) => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false,
+  interaction: { mode: 'index', intersect: false },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: _cssVar('--surface'),
+      borderColor: color,
+      borderWidth: 1,
+      titleColor: _cssVar('--muted'),
+      bodyColor: _cssVar('--text'),
+      callbacks: { label: ctx => ` ${ctx.parsed.y.toFixed(1)} ${unit}` }
+    }
+  },
+  scales: {
+    x: {
+      ticks: { color: _cssVar('--muted'), font: { size: 10 }, maxTicksLimit: 8, maxRotation: 0 },
+      grid:  { color: _cssVar('--border') },
+      border: { color: _cssVar('--border') }
+    },
+    y: {
+      ticks: { color: _cssVar('--muted'), font: { size: 10 } },
+      grid:  { color: _cssVar('--border') },
+      border: { color: _cssVar('--border') },
+      ...(yMin !== undefined ? { min: yMin } : {}),
+      ...(yMax !== undefined ? { max: yMax } : {}),
+    }
+  }
+});
+
+const makeDataset = color => ({
+  data: [], borderColor: color,
+  backgroundColor: color + '18', borderWidth: 2,
+  pointRadius: 0, pointHoverRadius: 4, fill: true, tension: 0.3,
+});
+
+const _tempCol = _cssVar('--temp-col');
+const _humCol  = _cssVar('--hum-col');
+
+const tempChart    = new Chart(document.getElementById('tempChart'),    { type: 'line', data: { labels: [], datasets: [makeDataset(_tempCol)] }, options: CHART_OPTS(_tempCol, '°C', 0, 50) });
+const humChart     = new Chart(document.getElementById('humChart'),     { type: 'line', data: { labels: [], datasets: [makeDataset(_humCol)] },  options: CHART_OPTS(_humCol,  '%',  0, 100) });
+const tempChart12h = new Chart(document.getElementById('tempChart12h'), { type: 'line', data: { labels: [], datasets: [makeDataset(_tempCol)] }, options: CHART_OPTS(_tempCol, '°C', 0, 50) });
+const humChart12h  = new Chart(document.getElementById('humChart12h'),  { type: 'line', data: { labels: [], datasets: [makeDataset(_humCol)] },  options: CHART_OPTS(_humCol,  '%',  0, 100) });
+
+const _chartById = { tempChart, humChart, tempChart12h, humChart12h };
+
+function switchTab(sensor, period, btn) {
+  const panel = btn.closest('.chart-panel');
+  panel.querySelectorAll('.chart-tab').forEach(b => b.classList.remove('active'));
+  panel.querySelectorAll('.chart-tab-content').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  const pane = document.getElementById(`${sensor}-tab-${period}`);
+  pane.classList.add('active');
+  const canvas = pane.querySelector('canvas');
+  if (canvas && _chartById[canvas.id]) _chartById[canvas.id].resize();
+}
+
+function loadCharts(readings, readings12h) {
+  const labels1h  = readings.map(r => r.timestamp.slice(0, 5));
+  const labels12h = readings12h.map(r => r.timestamp.slice(0, 5));
+  tempChart.data.labels            = labels1h;
+  tempChart.data.datasets[0].data  = readings.map(r => r.temperature);
+  humChart.data.labels             = labels1h;
+  humChart.data.datasets[0].data   = readings.map(r => r.humidity);
+  tempChart12h.data.labels             = labels12h;
+  tempChart12h.data.datasets[0].data   = readings12h.map(r => r.temperature);
+  humChart12h.data.labels              = labels12h;
+  humChart12h.data.datasets[0].data    = readings12h.map(r => r.humidity);
+  [tempChart, humChart, tempChart12h, humChart12h].forEach(c => c.update('none'));
+}
+
+// ── Sensor UI ─────────────────────────────────────────────────────────────────
+
+function tempStatus(t) {
+  if (t === null) return '';
+  if (t < 10)  return 'Too cold';
+  if (t < 18)  return 'Cool';
+  if (t <= 28) return 'Ideal';
+  if (t <= 35) return 'Warm';
+  return 'Too hot';
+}
+
+function humStatus(h) {
+  if (h === null) return '';
+  if (h < 40) return 'Too dry';
+  if (h < 60) return 'Low';
+  if (h <= 80) return 'Ideal';
+  return 'Very humid';
+}
+
+function updateSensorUI(latest, stats) {
+  const t = latest.temperature;
+  const h = latest.humidity;
+  document.getElementById('temp-val').innerHTML   = t !== null ? `${t.toFixed(0)}<span class="card-unit">°C</span>` : `—<span class="card-unit">°C</span>`;
+  document.getElementById('hum-val').innerHTML    = h !== null ? `${h.toFixed(0)}<span class="card-unit">%</span>`  : `—<span class="card-unit">%</span>`;
+  document.getElementById('temp-status').textContent = tempStatus(t);
+  document.getElementById('hum-status').textContent  = humStatus(h);
+  if (stats) {
+    const minT = stats.min_temp !== null ? stats.min_temp.toFixed(0) : '—';
+    const maxT = stats.max_temp !== null ? stats.max_temp.toFixed(0) : '—';
+    const minH = stats.min_hum  !== null ? stats.min_hum.toFixed(0)  : '—';
+    const maxH = stats.max_hum  !== null ? stats.max_hum.toFixed(0)  : '—';
+    document.getElementById('temp-range').innerHTML = `↓ ${minT}°&nbsp;&nbsp;↑ ${maxT}°`;
+    document.getElementById('hum-range').innerHTML  = `↓ ${minH}%&nbsp;&nbsp;↑ ${maxH}%`;
+  }
+  if (latest.timestamp) {
+    document.getElementById('last-update').textContent = `Last reading: ${latest.timestamp}`;
+  }
+}
+
+// ── Device grid ───────────────────────────────────────────────────────────────
+
+let _relayStatus = null;
+
+function buildDeviceGrid() {
+  const grid = document.getElementById('device-grid');
+  grid.innerHTML = DEVICES.map(d => `
+    <div class="device" id="dev-${d.id}">
+      <div class="device-head">
+        <div>
+          <div class="device-name">${d.name}</div>
+          <div class="device-sub">${d.sub}</div>
+        </div>
+        <div class="device-state" id="dev-state-${d.id}">
+          <span class="dot"></span>
+          <span id="dev-label-${d.id}">Off</span>
+        </div>
+      </div>
+      <div class="device-foot">
+        <div class="mode-btns">
+          <button class="mode-btn active" id="mode-auto-${d.id}"   onclick="setAuto(${d.id},'${d.key}',true)">Auto</button>
+          <button class="mode-btn"        id="mode-manual-${d.id}" onclick="setAuto(${d.id},'${d.key}',false)">Manual</button>
+        </div>
+        <button class="on-off-btn" id="onoff-${d.id}" onclick="toggleRelay(${d.id})">—</button>
+      </div>
+    </div>`).join('');
+}
+
+function updateRelayUI(status) {
+  _relayStatus = status;
+  const masterBtn = document.getElementById('master-auto-btn');
+  const masterOn  = status.enabled;
+  masterBtn.textContent = masterOn ? 'On' : 'Off';
+  masterBtn.classList.toggle('active', masterOn);
+  document.getElementById('climate-bar-label').textContent = masterOn ? 'Automation on' : 'Automation off';
+
+  DEVICES.forEach(d => {
+    const relayOn  = !!(status.relays && status.relays[String(d.id)]);
+    const isAuto   = !!(status[d.autoKey]);
+    const stateEl  = document.getElementById(`dev-state-${d.id}`);
+    const labelEl  = document.getElementById(`dev-label-${d.id}`);
+    const onoffBtn = document.getElementById(`onoff-${d.id}`);
+    const modeAutoBtn   = document.getElementById(`mode-auto-${d.id}`);
+    const modeManualBtn = document.getElementById(`mode-manual-${d.id}`);
+
+    stateEl.className = 'device-state' + (relayOn ? ' on' : '');
+    labelEl.textContent = relayOn ? 'On' : 'Off';
+
+    modeAutoBtn.classList.toggle('active', isAuto);
+    modeManualBtn.classList.toggle('active', !isAuto);
+
+    onoffBtn.style.display   = isAuto ? 'none' : 'inline-flex';
+    onoffBtn.textContent     = relayOn ? 'Turn Off' : 'Turn On';
+    onoffBtn.style.alignItems = 'center';
+  });
+}
+
+// ── Relay actions ─────────────────────────────────────────────────────────────
+
+async function apiPost(path, body) {
+  const resp = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function toggleRelay(id) {
+  if (!_relayStatus) return;
+  const relayOn = !!((_relayStatus.relays || {})[String(id)]);
+  try {
+    await apiPost(`/greenhouse/api/relay/${id}/set`, { state: !relayOn });
+    await pollRelay();
+  } catch (e) { console.error('relay set failed', e); }
+}
+
+async function setAuto(id, deviceName, auto) {
+  try {
+    await apiPost(`/greenhouse/api/relay/${id}/auto`, { auto, device_name: deviceName });
+    await pollRelay();
+  } catch (e) { console.error('relay auto failed', e); }
+}
+
+async function toggleMasterAuto() {
+  if (!_relayStatus) return;
+  try {
+    await apiPost('/greenhouse/api/automation/enabled', { enabled: !_relayStatus.enabled });
+    await pollRelay();
+  } catch (e) { console.error('master auto failed', e); }
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+
+let _polling = false;
+
+async function pollData() {
+  try {
+    const resp = await fetch('/greenhouse/api/history');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    updateSensorUI(data.latest || {}, data.stats || null);
+    loadCharts(data.readings || [], data.readings_12h || []);
+    setStatus(true);
+  } catch (e) {
+    setStatus(false);
+  }
+}
+
+async function pollRelay() {
+  try {
+    const resp = await fetch('/greenhouse/api/relay/status');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const status = await resp.json();
+    updateRelayUI(status);
+  } catch (e) { /* relay poll failure is silent — sensor poll drives the status dot */ }
+}
+
+function setStatus(live) {
+  document.getElementById('status-dot').className   = live ? 'live' : '';
+  document.getElementById('status-text').textContent = live ? 'Live' : 'Offline';
+  const banner = document.getElementById('offline-banner');
+  banner.classList.toggle('show', !live);
+}
+
+function toggleClimate() {
+  const bar  = document.getElementById('climate-bar');
+  const body = document.getElementById('climate-body');
+  bar.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
+async function poll() {
+  if (_polling) return;
+  _polling = true;
+  await Promise.all([pollData(), pollRelay()]);
+  _polling = false;
+  setTimeout(poll, 5000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+buildDeviceGrid();
+poll();
+</script>
+</body>
+</html>

@@ -6,8 +6,6 @@ Only imported when settings.yaml → camera.backend == "picamera2".
 import logging
 import time
 
-from ..config import STREAM_JPEG_QUALITY
-
 try:
     from picamera2 import Picamera2
     from picamera2.encoders import JpegEncoder
@@ -71,15 +69,17 @@ def _do_still_capture(picam2, encoder, manager):
             picam2.configure(_video_config(picam2, manager.resolution))
             picam2.start_recording(encoder, FileOutput(manager.output))
             with manager.cam_ctrl_lock:
-                apply_controls(picam2, dict(manager.cam_ctrl))
+                apply_controls(picam2, dict(manager.cam_ctrl), af_locked=manager.af_locked)
         except Exception as e:
             logging.warning("picamera2 restart after still failed: %s", e)
         manager._still_img = img
         manager._still_done.set()
 
 
-def apply_controls(picam2, c):
-    """picamera2 ISP: Brightness -1..1, Saturation 0..2, Sharpness 0..16, Contrast 0..32."""
+def apply_controls(picam2, c, af_locked=False):
+    """picamera2 ISP: Brightness -1..1, Saturation 0..2, Sharpness 0..16, Contrast 0..32.
+
+    af_locked keeps the lens where a timelapse fixed it (AfMode 0)."""
     try:
         controls = {}
         exp = int(c.get("exposure_time", 0))
@@ -101,8 +101,11 @@ def apply_controls(picam2, c):
         # Autofocus (IMX708 / Camera Module 3 only — silently ignored on other sensors)
         _af_mode = {"continuous": 2, "auto": 1, "manual": 0}
         _af_range = {"normal": 0, "macro": 1, "full": 2}
-        controls["AfMode"] = _af_mode.get(c.get("af_mode", "continuous"), 2)
-        controls["AfRange"] = _af_range.get(c.get("af_range", "normal"), 0)
+        if af_locked:
+            controls["AfMode"] = 0
+        else:
+            controls["AfMode"] = _af_mode.get(c.get("af_mode", "continuous"), 2)
+            controls["AfRange"] = _af_range.get(c.get("af_range", "normal"), 0)
         controls["AeMeteringMode"] = int(c.get("ae_metering_mode", 2))
         controls["AeConstraintMode"] = int(c.get("ae_constraint_mode", 2))
         controls["HdrMode"] = int(c.get("hdr_mode", 2))
@@ -127,10 +130,10 @@ def run(manager):
             continue
         backoff = 1
         manager.model = model
-        encoder = JpegEncoder(q=STREAM_JPEG_QUALITY, num_threads=2)
+        encoder = JpegEncoder(q=manager.stream_quality, num_threads=2)
         manager.set_handle(picam2)
         with manager.cam_ctrl_lock:
-            apply_controls(picam2, dict(manager.cam_ctrl))
+            apply_controls(picam2, dict(manager.cam_ctrl), af_locked=manager.af_locked)
         try:
             picam2.start_recording(encoder, FileOutput(manager.output))
             while not manager._stop.is_set() and not manager._restart.is_set():

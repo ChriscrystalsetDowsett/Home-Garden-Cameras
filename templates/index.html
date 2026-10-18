@@ -9,7 +9,8 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
 <title>Home Garden Cameras</title>
 <!-- CSS/JS ?v= must be bumped together — see CLAUDE.md "Static asset cache-busting". -->
-<link rel="stylesheet" href="/static/index.css?v=13">
+<link rel="stylesheet" href="/static/index.css?v=15">
+<link rel="stylesheet" href="/static/ptz.css?v=2">
 </head>
 <body>
 <div class="container">
@@ -140,6 +141,9 @@
 
   <!-- ── Action buttons + all panels below live in .inner-content ── -->
   <div class="inner-content">
+
+  <!-- ── Pan/tilt views (only shown on a camera with a rig; see static/ptz.js) ── -->
+  <div class="ptz-host" id="ptz-panel-host"></div>
 
   <!-- Row 1: primary capture actions -->
   <div class="live-actions" style="margin-bottom:8px">
@@ -286,6 +290,7 @@
 <div class="toast" id="toast"></div>
 
 <script>const PI_NAME = "{{ pi_name }}"; const PHOTO_BASE_URL = "{{ photo_base_url }}";</script>
-<script src="/static/index.js?v=13"></script>
+<script src="/static/ptz.js?v=2"></script>
+<script src="/static/index.js?v=15"></script>
 </body>
 </html>

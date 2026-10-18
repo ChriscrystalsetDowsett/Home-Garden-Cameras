@@ -41,4 +41,3 @@ data/videos/_tl_list_*.txt
 # Environment files
 .env
 .env.*
-CLAUDE.md
