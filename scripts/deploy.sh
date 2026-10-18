@@ -71,29 +71,37 @@ echo "backup ~/backups/hgc-$ts.tgz"
 REMOTE
 
 say "Checking secrets in $PI's settings.yaml"
-ssh "$SSH_HOST" python3 - "$LIVE/config/settings.yaml" < <(cat <<'PY'; echo "TOKEN = '$(cat "$TOKEN_FILE")'"; echo "main()"
+# The token reaches the Pi on stdin inside a private temp file, never on a command line or in output.
+PYFILE=$(mktemp); chmod 600 "$PYFILE"; trap 'rm -f "$PYFILE"' EXIT
+{
+  printf 'TOKEN = %s\n' "$(python3 -c 'import json,sys;print(json.dumps(open(sys.argv[1]).read().strip()))' "$TOKEN_FILE")"
+  cat <<'PY'
 import re, secrets, sys, os
 path = sys.argv[1]
-def main():
-    s = open(path).read()
-    changed = []
-    if not re.search(r"^\s+api_token:\s*\S", s, re.M):
-        s = re.sub(r"^server:\s*\n", "server:\n  api_token: \"%s\"   # fleet token (writes); same on every Pi\n" % TOKEN, s, count=1, flags=re.M)
-        changed.append("server.api_token")
-    if not re.search(r"^\s+secret_key:\s*\S", s, re.M):
-        key = secrets.token_hex(32)
-        if re.search(r"^dashboard:\s*$", s, re.M):
-            s = re.sub(r"^dashboard:\s*\n", "dashboard:\n  secret_key: \"%s\"\n" % key, s, count=1, flags=re.M)
-        else:
-            s += "\ndashboard:\n  secret_key: \"%s\"   # signs session cookies\n" % key
-        changed.append("dashboard.secret_key")
-    if changed:
-        tmp = path + ".tmp"
-        open(tmp, "w").write(s); os.chmod(tmp, 0o600); os.replace(tmp, path)
-    os.chmod(path, 0o600)
-    print("added: " + ", ".join(changed) if changed else "secrets present")
+s = open(path).read()
+changed = []
+if not re.search(r"^\s+api_token:\s*\S", s, re.M):
+    s = re.sub(r"^server:\s*\n", lambda m: 'server:\n  api_token: "%s"   # fleet token (writes); same on every Pi\n' % TOKEN, s, count=1, flags=re.M)
+    changed.append("server.api_token")
+if not re.search(r"^\s+secret_key:\s*\S", s, re.M):
+    key = secrets.token_hex(32)
+    if re.search(r"^dashboard:\s*$", s, re.M):
+        s = re.sub(r"^dashboard:\s*\n", lambda m: 'dashboard:\n  secret_key: "%s"\n' % key, s, count=1, flags=re.M)
+    else:
+        s += '\ndashboard:\n  secret_key: "%s"   # signs session cookies\n' % key
+    changed.append("dashboard.secret_key")
+if changed:
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(s)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+os.chmod(path, 0o600)
+print("added: " + ", ".join(changed) if changed else "secrets present")
 PY
-)
+} > "$PYFILE"
+ssh "$SSH_HOST" python3 - "$LIVE/config/settings.yaml" < "$PYFILE" 2>&1 | grep -v -i token || true
+rm -f "$PYFILE"
 
 say "Copying code to $PI"
 for d in app static templates scripts; do
