@@ -105,6 +105,25 @@ def _disk_free_pct(path):
         return None
 
 
+_VERSION_FILE = Path(__file__).parent.parent / "VERSION"   # written by scripts/deploy.sh
+_SYNC_STATUS  = Path.home() / ".sync-status.json"           # written by sync-to-bigpc.sh
+
+
+def _read_json(path):
+    try:
+        import json
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _cpu_temp():
+    try:
+        return round(int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000, 1)
+    except (OSError, ValueError):
+        return None
+
+
 @app.route("/api/health")
 def api_health():
     frame_age = None
@@ -120,6 +139,13 @@ def api_health():
         "frame_age_s": frame_age,
         "disk_free_pct": round(free_pct, 1) if free_pct is not None else None,
         "audio_available": AUDIO_AVAILABLE,
+        "pi": PI_NAME,
+        "version": (_VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "dev"),
+        "sleeping": not camera.enabled,          # night schedule (or switched off)
+        "fps": camera.output.fps,
+        "temperature_c": _cpu_temp(),
+        "rig": servo.enabled,
+        "sync": _read_json(_SYNC_STATUS),
     })
 
 
