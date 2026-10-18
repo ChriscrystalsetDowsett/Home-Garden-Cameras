@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
 <title>Home Garden Cameras</title>
 <!-- CSS/JS ?v= must be bumped together — see CLAUDE.md "Static asset cache-busting". -->
-<link rel="stylesheet" href="/static/index.css?v=15">
+<link rel="stylesheet" href="/static/index.css?v=16">
 <link rel="stylesheet" href="/static/ptz.css?v=2">
 </head>
 <body>
@@ -144,6 +144,48 @@
 
   <!-- ── Pan/tilt views (only shown on a camera with a rig; see static/ptz.js) ── -->
   <div class="ptz-host" id="ptz-panel-host"></div>
+
+  <!-- ── Quick capture: one tap, full quality (static/capture.js) ── -->
+  <section class="quick-capture" aria-label="Quick capture">
+    <div class="qc-head">
+      <span class="section-label" style="margin-bottom:0">Quick capture</span>
+      <span class="qc-hint">one tap · best quality</span>
+    </div>
+    <div class="qc-grid">
+      <button class="qc-tile qc-photo" id="qc-photo" type="button" onclick="qcPhoto()">
+        <span class="qc-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+        <span class="qc-title">Photo</span>
+        <span class="qc-sub" id="qc-photo-sub">Full resolution</span>
+      </button>
+      <button class="qc-tile qc-video" id="qc-video" type="button" onclick="qcVideo()">
+        <span class="qc-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="M15.5 10.5 21.5 7v10l-6-3.5z"/></svg></span>
+        <span class="qc-title">30 s video</span>
+        <span class="qc-sub" id="qc-video-sub">1080p · stops by itself</span>
+      </button>
+      <button class="qc-tile qc-tl" id="qc-tl" type="button" onclick="qcTimelapse()">
+        <span class="qc-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 3.5"/></svg></span>
+        <span class="qc-title">30 min timelapse</span>
+        <span class="qc-sub" id="qc-tl-sub">4K · a frame every 10 s</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ── Moving timelapse (cameras with a pan/tilt rig only) ── -->
+  <section class="motion-card" id="motion-card" aria-label="Moving timelapse" hidden>
+    <div class="qc-head">
+      <span class="section-label" style="margin-bottom:0">Moving timelapse</span>
+      <span class="qc-hint">the camera moves while it shoots</span>
+    </div>
+    <div id="motion-body"></div>
+    <div id="motion-running" class="mr" hidden>
+      <div class="mr-title" id="mr-title">Moving timelapse</div>
+      <div class="mr-track"><div class="mr-fill" id="mr-progress"></div></div>
+      <div class="mr-meta" id="mr-meta"></div>
+      <button class="btn btn-danger" type="button" onclick="motionStop()" style="width:100%;justify-content:center">Stop</button>
+    </div>
+  </section>
+
+  <div class="section-label" style="margin:4px 0 10px">Custom capture</div>
 
   <!-- Row 1: primary capture actions -->
   <div class="live-actions" style="margin-bottom:8px">
@@ -291,6 +333,7 @@
 
 <script>const PI_NAME = "{{ pi_name }}"; const PHOTO_BASE_URL = "{{ photo_base_url }}";</script>
 <script src="/static/ptz.js?v=2"></script>
-<script src="/static/index.js?v=15"></script>
+<script src="/static/index.js?v=16"></script>
+<script src="/static/capture.js?v=1"></script>
 </body>
 </html>

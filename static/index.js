@@ -15,6 +15,7 @@ let   currentRes   = '1920x1080';
 let   recording    = false;
 let   recordTimer  = null;
 let   recordStart  = null;
+let   recordLimit  = 0;      // seconds; >0 when the clip stops by itself
 let   tlPanelOpen   = false;
 let   recPanelOpen  = false;
 let   snapPanelOpen = false;
@@ -59,6 +60,31 @@ const TL_INTERVAL_LBLS = ['1s','5s','10s','30s','1m','5m','15m','1h'];
 const TL_DUR_S         = [300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 0];
 const TL_DUR_LBLS      = ['5m','15m','30m','1h','2h','4h','8h','24h','\u221e'];
 
+// ── API helper: every change goes through here so failures are never silent ───
+// Returns the parsed JSON on success, or null after telling the user why not.
+async function apiPost(path, body) {
+  try {
+    const r = await fetch(path, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body || {}),
+    });
+    let d = {};
+    try { d = await r.json(); } catch (_) {}
+    if (r.status === 401) {
+      toast('Open this camera from the camera wall to use its controls', 'error');
+      return null;
+    }
+    if (!r.ok || d.ok === false) {
+      toast(d.message || d.error || ('Failed (' + r.status + ')'), 'error');
+      return null;
+    }
+    return d;
+  } catch (_) {
+    toast('Camera unreachable', 'error');
+    return null;
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   loadInfo();
@@ -68,37 +94,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadVideos();
   fetchCameraEnabled();
 
-  // Restore timelapse state so any device sees the same running session
+  await syncTLFromServer();
+  await syncRecFromServer();
+});
+
+// ── Sync with the camera (any device sees the same running session) ───────────
+
+async function syncTLFromServer() {
   try {
     const r = await fetch('/api/timelapse/status');
     const d = await r.json();
-    if (d.running) {
+    if (d.running && !tlRunning) {
       tlRunning      = true;
       tlInterval_    = d.interval;
       tlDuration_    = d.duration;
       tlStart_       = Date.now() - (d.elapsed * 1000);
-      tlNextFrameAt_ = tlStart_ + d.count * d.interval * 1000;
+      tlNextFrameAt_ = Date.now() + (d.next_in || d.interval) * 1000;
 
-      // Restore slider positions to match the running session
       const iIdx = TL_INTERVAL_S.findIndex(v => v === d.interval);
       if (iIdx >= 0) setInterval_(iIdx);
       const dIdx = TL_DUR_S.findIndex(v => v === d.duration);
       if (dIdx >= 0) setDur(dIdx);
 
-      // Open the panel immediately showing live status
-      tlPanelOpen = true;
-      document.getElementById('tl-panel').classList.remove('panel-closed');
       document.getElementById('tl-interval-slider').disabled = true;
       document.getElementById('tl-dur-slider').disabled = true;
       document.getElementById('tl-btn').className = 'btn btn-tl active';
       document.getElementById('frame-count').textContent = String(d.count).padStart(4, '0');
-      if (d.duration > 0) {
-        const projFrames = Math.floor(d.duration / d.interval);
-        document.getElementById('tl-videst').textContent = '~' + fmtVideoLen(projFrames / 24);
-      } else {
-        const fph = Math.floor(3600 / d.interval);
-        document.getElementById('tl-videst').textContent = '~' + fmtVideoLen(fph / 24) + '/hr';
-      }
+      const frames = d.expected || Math.floor(3600 / d.interval);
+      document.getElementById('tl-videst').textContent =
+        '~' + fmtVideoLen(frames / 24) + (d.expected ? '' : '/hr');
       const startBtn = document.getElementById('tl-start-btn');
       startBtn.className = 'btn btn-danger';
       startBtn.style.cssText = 'width:100%;justify-content:center';
@@ -109,29 +133,66 @@ document.addEventListener('DOMContentLoaded', async () => {
       tlClockTimer = setInterval(_tlClockTick, 1000);
       document.getElementById('tl-live-strip').style.display = '';
       _updateTLStrip(d.elapsed || 0);
-    } else {
+      updateFSQuickBtns();
+    } else if (!d.running && !tlRunning) {
       _showTLIdle();
     }
-  } catch (_) { _showTLIdle(); }
+    return d;
+  } catch (_) { _showTLIdle(); return null; }
+}
 
-  // Restore recording state
+function _recTick() {
+  const btn = document.getElementById('record-btn');
+  const s  = Math.floor((Date.now() - recordStart) / 1000);
+  const left = recordLimit ? Math.max(0, recordLimit - s) : null;
+  const t = left !== null ? left : s;
+  const label = String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
+  btn.innerHTML = SVG_STOP_10 + ' ' + label + (left !== null ? ' left' : '');
+}
+
+async function syncRecFromServer() {
   try {
     const r = await fetch('/api/record/status');
     const d = await r.json();
-    if (d.running) {
-      recording = true;
+    if (d.running && !recording) {
+      recording   = true;
       recordStart = Date.now() - (d.duration * 1000);
-      const btn = document.getElementById('record-btn');
-      btn.className = 'btn btn-rec recording';
-      recordTimer = setInterval(() => {
-        const s  = Math.floor((Date.now() - recordStart) / 1000);
-        const mm = String(Math.floor(s / 60)).padStart(2, '0');
-        const ss = String(s % 60).padStart(2, '0');
-        btn.innerHTML = SVG_STOP_10 + ' ' + mm + ':' + ss;
-      }, 500);
+      recordLimit = d.limit || 0;
+      document.getElementById('record-btn').className = 'btn btn-rec recording';
+      document.getElementById('mic-btn').disabled = true;
+      clearInterval(recordTimer);
+      recordTimer = setInterval(_recTick, 500);
+      _startRecWatch();
+      updateFSQuickBtns();
+    } else if (!d.running && recording) {
+      _recStopped(true);
     }
-  } catch (_) {}
-});
+    return d;
+  } catch (_) { return null; }
+}
+
+// A clip with a length stops on the camera; notice it and tidy the UI.
+let _recWatch = null;
+function _startRecWatch() {
+  clearInterval(_recWatch);
+  _recWatch = setInterval(syncRecFromServer, 2000);
+}
+
+function _recStopped(byCamera) {
+  recording = false;
+  recordLimit = 0;
+  clearInterval(recordTimer);
+  clearInterval(_recWatch);
+  document.getElementById('mic-btn').disabled = false;
+  const btn = document.getElementById('record-btn');
+  btn.className = 'btn btn-rec';
+  btn.innerHTML = SVG_REC_DOT_13 + ' Record';
+  if (byCamera) toast('\u2713 Clip saved \u2014 finishing\u2026', 'success');
+  setTimeout(loadVideos, 4000);
+  setTimeout(loadVideos, 12000);
+  updateFSQuickBtns();
+  if (typeof qcRefresh === 'function') qcRefresh();
+}
 
 // ── Camera enable / disable ────────────────────────────────────────────────────
 
@@ -148,17 +209,12 @@ async function toggleCamera() {
   const btn = document.getElementById('cam-toggle-btn');
   btn.disabled = true;
   try {
-    const r = await fetch('/api/camera/enabled', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: !camEnabled }),
-    });
-    const d = await r.json();
-    camEnabled = d.enabled !== false;
-    _updateCamToggleBtn();
-    showToast(camEnabled ? '📷 Camera enabled' : '⏸ Camera paused');
-  } catch (_) {
-    showToast('Failed to toggle camera');
+    const d = await apiPost('/api/camera/enabled', { enabled: !camEnabled });
+    if (d) {
+      camEnabled = d.enabled !== false;
+      _updateCamToggleBtn();
+      toast(camEnabled ? 'Camera on' : 'Camera paused', '');
+    }
   } finally {
     btn.disabled = false;
   }
@@ -600,16 +656,10 @@ async function doTakeSnapshot() {
   btn.disabled = true;
   btn.innerHTML = SVG_CAMERA_15 + ' Capturing\u2026';
   try {
-    const r = await fetch('/api/snapshot', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({filter: snapFilter, quality: snapQuality}),
-    });
-    const d = await r.json();
-    if (d.ok) {
-      toast('\u2713 Snapshot saved', 'success');
+    const d = await apiPost('/api/snapshot', {filter: snapFilter, quality: snapQuality});
+    if (d) {
+      toast('\u2713 Photo saved', 'success');
       loadGallery();
-    } else {
-      toast('Snapshot failed', 'error');
     }
   } catch (_) {
     toast('Request failed', 'error');
@@ -782,52 +832,37 @@ function setRecQuality(btn) {
   recCrf = parseInt(btn.dataset.crf, 10);
 }
 
-async function startRecording() {
+async function startRecording(duration) {
   // Switch camera resolution if a different one was chosen
-  if (recTargetRes && recTargetRes !== currentRes) {
-    const r = await fetch('/api/resolution', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({resolution: recTargetRes}),
-    });
-    const d = await r.json();
-    if (d.ok) { currentRes = recTargetRes; updateResHighlight(); }
+  if (!duration && recTargetRes && recTargetRes !== currentRes) {
+    const d = await apiPost('/api/resolution', {resolution: recTargetRes});
+    if (d && d.ok) { currentRes = recTargetRes; updateResHighlight(); }
   }
-  await fetch('/api/record/start', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({quality: recCrf, audio: recAudio}),
-  });
-  recording = true;
+  const d = await apiPost('/api/record/start', {quality: recCrf, audio: recAudio, duration: duration || 0});
+  if (!d) return false;
+  recording   = true;
   recordStart = Date.now();
+  recordLimit = d.limit || 0;
   recPanelOpen = false;
   document.getElementById('rec-panel').classList.add('panel-closed');
   document.getElementById('mic-btn').disabled = true;
-  const btn = document.getElementById('record-btn');
-  btn.className = 'btn btn-rec recording';
-  recordTimer = setInterval(() => {
-    const s  = Math.floor((Date.now() - recordStart) / 1000);
-    const mm = String(Math.floor(s / 60)).padStart(2, '0');
-    const ss = String(s % 60).padStart(2, '0');
-    btn.innerHTML = SVG_STOP_10 + ' ' + mm + ':' + ss;
-  }, 500);
+  document.getElementById('record-btn').className = 'btn btn-rec recording';
+  clearInterval(recordTimer);
+  recordTimer = setInterval(_recTick, 500);
+  _recTick();
+  _startRecWatch();
   updateFSQuickBtns();
+  return true;
 }
 
 async function stopRecording() {
-  const r = await fetch('/api/record/stop', {method: 'POST'});
-  const d = await r.json();
-  recording = false;
-  clearInterval(recordTimer);
-  document.getElementById('mic-btn').disabled = false;
-  const btn = document.getElementById('record-btn');
-  btn.className = 'btn btn-rec';
-  btn.innerHTML = SVG_REC_DOT_13 + ' Record';
-  if (d.filename && d.audio_ok === false && recAudio) {
+  const d = await apiPost('/api/record/stop');
+  if (d && d.filename && d.audio_ok === false && recAudio && document.getElementById('rec-audio-section')?.offsetParent) {
     toast('\u2713 Recording saved (no audio captured)', 'error');
-  } else if (d.filename) {
-    toast('\u2713 Recording saved \u2014 converting\u2026', 'success');
+  } else if (d && d.filename) {
+    toast('\u2713 Recording saved \u2014 finishing\u2026', 'success');
   }
-  setTimeout(loadVideos, 4000);
-  updateFSQuickBtns();
+  _recStopped(false);
 }
 
 // ── Timelapse interval slider ──────────────────────────────────────────────────
@@ -876,10 +911,8 @@ async function startTL() {
   const dSlider  = document.getElementById('tl-dur-slider');
   const interval = TL_INTERVAL_S[parseInt(iSlider.value, 10)];
   const duration = TL_DUR_S[parseInt(dSlider.value, 10)];
-  await fetch('/api/timelapse/start', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({interval, duration}),
-  });
+  const started = await apiPost('/api/timelapse/start', {interval, duration});
+  if (!started) return;
   tlRunning      = true;
   tlStart_       = Date.now();
   tlInterval_    = interval;
@@ -903,7 +936,7 @@ async function startTL() {
 }
 
 async function stopTL() {
-  await fetch('/api/timelapse/stop', {method: 'POST'});
+  await apiPost('/api/timelapse/stop');
   _tlStopped();
   toast('Timelapse stopped', '');
 }
@@ -949,6 +982,7 @@ async function pollTL() {
       tlNextFrameAt_ = tlStart_ + count * tlInterval_ * 1000;
     }
 
+    if (typeof qcRefresh === 'function') qcRefresh(d);
     if (!d.running && tlRunning) {
       _tlStopped();
       toast('\u2713 Timelapse complete \u2014 ' + count + ' frames \u2014 compiling\u2026', 'success');
@@ -1431,13 +1465,20 @@ function scheduleCtrl() {
   _ctrlDebounce = setTimeout(sendCtrl, 80);
 }
 
+let _ctrlWarned = false;
 async function sendCtrl() {
   try {
-    await fetch('/api/camera_controls', {
+    const r = await fetch('/api/camera_controls', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(_ctrl),
     });
+    if (!r.ok && !_ctrlWarned) {      // a slider sends many updates; say it once
+      _ctrlWarned = true;
+      toast(r.status === 401 ? 'Open this camera from the camera wall to change settings'
+                             : 'Setting not saved (' + r.status + ')', 'error');
+      setTimeout(() => { _ctrlWarned = false; }, 10000);
+    }
   } catch (_) {}
 }
 
