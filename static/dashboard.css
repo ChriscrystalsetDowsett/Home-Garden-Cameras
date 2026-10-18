@@ -17,6 +17,8 @@ button, .cam-tile { touch-action: manipulation; user-select: none; }
   --muted:    #87a887;
   --dim:      #4a6b4a;
   --red:      #ef4444;
+  --night:    #818cf8;   /* sleeping cameras (night schedule) */
+  --night-lt: #c7d2fe;
   --radius:   12px;
 }
 
@@ -116,6 +118,45 @@ body {
 .fleet-pill.degraded .fleet-dot { background: var(--amber); box-shadow: 0 0 7px rgba(217,119,6,0.5); }
 .fleet-pill.all-down .fleet-dot { background: var(--red); }
 .fleet-pill.all-live { color: var(--green-lt); border-color: var(--green-dk); }
+.fleet-pill { background: transparent; font-family: inherit; cursor: pointer; }
+.fleet-pill.asleep .fleet-dot { background: var(--night); box-shadow: 0 0 6px rgba(129,140,248,0.5); }
+.fleet-pill.asleep { color: var(--night-lt); }
+
+/* Camera health panel (from the status pill) */
+.health-panel {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  right: max(12px, env(safe-area-inset-right, 0px));
+  width: min(360px, calc(100vw - 24px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+  padding: 12px 14px 6px;
+  z-index: 250;
+  opacity: 0; transform: translateY(-6px); pointer-events: none;
+  transition: opacity 0.18s, transform 0.18s;
+}
+.health-panel.open { opacity: 1; transform: none; pointer-events: auto; }
+.health-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--dim); margin-bottom: 4px;
+}
+.health-updated { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.health-list { list-style: none; margin: 0; padding: 0; }
+.health-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+.health-row:first-child { border-top: none; }
+.health-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.health-row.asleep .health-dot { background: var(--night); }
+.health-row.down .health-dot { background: var(--red); }
+.health-main { flex: 1; min-width: 0; }
+.health-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.health-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.health-row.warn .health-meta { color: var(--amber-lt); }
+.health-state { font-size: 12px; font-weight: 600; color: var(--green-lt); white-space: nowrap; }
+.health-row.asleep .health-state { color: var(--night-lt); }
+.health-row.down .health-state { color: #fca5a5; }
 
 .app-clock {
   font-size: 13px;
@@ -186,10 +227,17 @@ body {
   transition: opacity 0.3s;
 }
 
+/* Sleeping (night schedule): dimmed, with the wake time instead of "Offline" */
+.cam-tile.sleeping .tile-stream-img { opacity: 0.3; }
+.cam-tile.sleeping .tile-offline-badge { opacity: 1; color: var(--night-lt); }
+.cam-tile.sleeping .tile-dot { background: var(--night); box-shadow: none; animation: none; }
+
 /* Offline state */
 .cam-tile.offline .tile-stream-img { opacity: 0.15; }
 .cam-tile.offline .tile-offline-badge { opacity: 1; }
 .cam-tile.offline .tile-dot { background: var(--red); box-shadow: none; animation: none; }
+.cam-tile.sleeping.offline .tile-stream-img { opacity: 0.3; }
+.cam-tile.sleeping.offline .tile-dot { background: var(--night); }
 
 .tile-offline-badge {
   position: absolute;

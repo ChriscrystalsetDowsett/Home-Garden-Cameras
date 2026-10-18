@@ -26,6 +26,7 @@ from flask import (
 from .config import (
     SNAPSHOT_DIR, VIDEOS_DIR, LOG_DIR, CAM_CTRL_DEFAULTS, SECRET_KEY,
     CAM_BACKEND, PI_NAME, PHOTO_BASE_URL, API_TOKEN, ALLOWED_ORIGINS,
+    SCHEDULE_ENABLED, SCHEDULE_ON,
 )
 from .camera import camera, cam_ctrl, cam_ctrl_lock
 from .timelapse import timelapse, get_compile_status
@@ -142,6 +143,7 @@ def api_health():
         "pi": PI_NAME,
         "version": (_VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "dev"),
         "sleeping": not camera.enabled,          # night schedule (or switched off)
+        "wakes_at": SCHEDULE_ON if (SCHEDULE_ENABLED and not camera.enabled) else None,
         "fps": camera.output.fps,
         "temperature_c": _cpu_temp(),
         "rig": servo.enabled,

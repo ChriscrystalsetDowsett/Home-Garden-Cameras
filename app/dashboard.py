@@ -172,6 +172,27 @@ def index():
     return resp
 
 
+# ── Fleet health (the wall's status pill and panel) ───────────────────────────
+
+@dashboard.route("/dashboard/fleet")
+@_require_auth
+def fleet():
+    """Every camera's /api/health in one call, fetched in parallel (None = unreachable)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(i):
+        try:
+            r = _requests.get(_cam_base(i) + "/api/health", timeout=3)
+            return r.json() if r.ok else None
+        except (_requests.exceptions.RequestException, ValueError):
+            return None
+
+    with ThreadPoolExecutor(max_workers=max(1, len(CAMERAS))) as ex:
+        healths = list(ex.map(one, range(len(CAMERAS))))
+    return jsonify([{"idx": i, "name": c["name"], "health": h}
+                    for i, (c, h) in enumerate(zip(CAMERAS, healths))])
+
+
 # ── Quick-action API proxy (used by dashboard JS) ──────────────────────────────
 
 @dashboard.route(

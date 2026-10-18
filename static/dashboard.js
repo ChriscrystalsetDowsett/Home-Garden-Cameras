@@ -149,14 +149,122 @@ function _updateFleetPill() {
   if (!pill || !count) return;
   const tiles = document.querySelectorAll('.cam-tile[data-idx]');
   const total = tiles.length;
-  let live = 0;
-  tiles.forEach(t => { if (!t.classList.contains('offline') &&
-    document.getElementById('tile-dot-' + t.dataset.idx)?.classList.contains('online')) live++; });
-  count.textContent = live + '/' + total + ' live';
-  pill.classList.toggle('all-live', live === total && total > 0);
-  pill.classList.toggle('degraded', live > 0 && live < total);
-  pill.classList.toggle('all-down', live === 0);
+  let live = 0, asleep = 0;
+  tiles.forEach(t => {
+    if (t.classList.contains('sleeping')) asleep++;
+    else if (!t.classList.contains('offline') &&
+      document.getElementById('tile-dot-' + t.dataset.idx)?.classList.contains('online')) live++;
+  });
+  const down = total - live - asleep;
+  // A sleeping camera is fine; only cameras that should be up and aren't count as trouble.
+  count.textContent = down > 0 ? (down + ' down · ' + live + ' live')
+                    : asleep > 0 ? (live > 0 ? live + ' live · ' + asleep + ' asleep' : 'All asleep')
+                    : live + '/' + total + ' live';
+  pill.classList.toggle('all-live', down === 0 && live > 0);
+  pill.classList.toggle('asleep', down === 0 && live === 0 && asleep > 0);
+  pill.classList.toggle('degraded', down > 0 && live > 0);
+  pill.classList.toggle('all-down', down > 0 && live === 0);
 }
+
+/* ── Camera health: sleeping tiles + the status panel ─────────────────────────── */
+// GET /dashboard/fleet returns each camera's /api/health (null = unreachable).
+
+let _fleet = [];
+
+function _fmtWake(hhmm) {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  const d = new Date(); d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function _ago(iso) {
+  if (!iso) return 'never';
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 3600) return Math.max(1, Math.round(s / 60)) + ' min ago';
+  if (s < 172800) return Math.round(s / 3600) + ' h ago';
+  return Math.round(s / 86400) + ' days ago';
+}
+
+function _applyFleet() {
+  _fleet.forEach(c => {
+    const tile = document.querySelector('.cam-tile[data-idx="' + c.idx + '"]');
+    if (!tile) return;
+    const h = c.health;
+    const sleeping = !!(h && h.sleeping);
+    tile.classList.toggle('sleeping', sleeping);
+    const badge = tile.querySelector('.tile-offline-badge');
+    if (badge) badge.textContent = sleeping
+      ? ('Sleeping' + (h.wakes_at ? ' until ' + _fmtWake(h.wakes_at) : ''))
+      : 'Offline';
+  });
+  _updateFleetPill();
+  _renderHealth();
+}
+
+function _status(h) {
+  if (!h) return ['down', 'Unreachable'];
+  if (h.sleeping) return ['asleep', 'Sleeping' + (h.wakes_at ? ' until ' + _fmtWake(h.wakes_at) : '')];
+  if (h.camera !== 'live') return ['down', 'Camera stalled'];
+  return ['ok', 'Live'];
+}
+
+function _renderHealth() {
+  const list = document.getElementById('health-list');
+  if (!list) return;
+  list.innerHTML = '';
+  _fleet.forEach(c => {
+    const h = c.health;
+    const [cls, label] = _status(h);
+    const bits = [];
+    if (h) {
+      if (h.temperature_c != null) bits.push(Math.round(h.temperature_c) + ' °C');
+      const sync = h.sync;
+      if (sync) bits.push(sync.rc === 0 ? 'backed up ' + _ago(sync.last_ok) : 'backup failing since ' + _ago(sync.last_ok));
+      else bits.push('no backup yet');
+      if (h.version) bits.push('v ' + h.version.split(' ')[0]);
+    }
+    const li = document.createElement('li');
+    li.className = 'health-row ' + cls;
+    li.innerHTML = '<span class="health-dot"></span><div class="health-main">'
+      + '<div class="health-name"></div><div class="health-meta"></div></div>'
+      + '<span class="health-state"></span>';
+    li.querySelector('.health-name').textContent = c.name;
+    li.querySelector('.health-meta').textContent = bits.join(' · ');
+    li.querySelector('.health-state').textContent = label;
+    if (h && h.sync && h.sync.rc !== 0) li.classList.add('warn');
+    list.appendChild(li);
+  });
+  const up = document.getElementById('health-updated');
+  if (up) up.textContent = 'updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+async function pollFleet() {
+  try {
+    const r = await fetch('/dashboard/fleet');
+    if (r.ok) { _fleet = await r.json(); _applyFleet(); }
+  } catch (_) { /* keep the last known state */ }
+}
+
+function toggleHealthPanel(ev) {
+  ev.stopPropagation();
+  const p = document.getElementById('health-panel');
+  const open = !p.classList.contains('open');
+  p.classList.toggle('open', open);
+  document.getElementById('fleet-pill').setAttribute('aria-expanded', open);
+  if (open) pollFleet();
+}
+
+document.addEventListener('click', e => {
+  const p = document.getElementById('health-panel');
+  if (p && p.classList.contains('open') && !p.contains(e.target)) {
+    p.classList.remove('open');
+    document.getElementById('fleet-pill').setAttribute('aria-expanded', 'false');
+  }
+});
+
+pollFleet();
+setInterval(pollFleet, 30000);
 
 function _tickClock() {
   const el = document.getElementById('app-clock');

@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
 <title>Home Garden Cameras</title>
 <!-- CSS/JS ?v= must be bumped together — see CLAUDE.md "Static asset cache-busting". -->
-<link rel="stylesheet" href="/static/dashboard.css?v=16">
+<link rel="stylesheet" href="/static/dashboard.css?v=17">
 <link rel="stylesheet" href="/static/ptz.css?v=2">
 </head>
 <body>
@@ -26,10 +26,11 @@
     </div>
 
     <div class="app-bar-right">
-      <span class="fleet-pill" id="fleet-pill" title="Cameras online">
+      <button class="fleet-pill" id="fleet-pill" type="button" title="Camera health"
+              onclick="toggleHealthPanel(event)" aria-haspopup="true" aria-expanded="false">
         <span class="fleet-dot" id="fleet-dot"></span>
         <span id="fleet-count">—</span>
-      </span>
+      </button>
       <span class="app-clock" id="app-clock"></span>
       <nav class="app-nav">
         {% for link in links %}
@@ -197,11 +198,21 @@
 </div>
 
 
+<!-- ── Camera health panel (opened from the status pill) ───────────────── -->
+<div class="health-panel" id="health-panel" role="dialog" aria-label="Camera health">
+  <div class="health-head">
+    <span>Camera health</span>
+    <span class="health-updated" id="health-updated"></span>
+  </div>
+  <ul class="health-list" id="health-list"></ul>
+</div>
+
+
 <!-- ── Toast ──────────────────────────────────────────────────────────────── -->
 <div class="toast" id="toast"></div>
 
 
 <script src="/static/ptz.js?v=2"></script>
-<script src="/static/dashboard.js?v=16"></script>
+<script src="/static/dashboard.js?v=17"></script>
 </body>
 </html>
