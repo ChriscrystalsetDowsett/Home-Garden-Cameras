@@ -10,7 +10,11 @@
    Presets come from GET /api/timelapse/presets, so the camera decides.
 
    Uses apiPost(), toast(), syncTLFromServer(), syncRecFromServer(),
-   loadGallery() and loadVideos() from index.js. */
+   loadGallery() and loadVideos() from index.js. Wrapped in its own scope so
+   its helpers can't clash with index.js/ptz.js; the page calls the few
+   functions exported on window at the bottom. */
+
+(function () {
 
 const QC_VIDEO_SECONDS = 30;
 const QC_TL_PRESET = 'tl30';
@@ -244,8 +248,13 @@ async function motionStop() {
   qcRefresh();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+Object.assign(window, { qcPhoto, qcVideo, qcTimelapse, qcRefresh, motionStop });
+
+function init() {
   qcRefresh();
   motionInit();
   setInterval(() => { if (document.visibilityState === 'visible') qcRefresh(); }, 2000);
-});
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();
+})();
