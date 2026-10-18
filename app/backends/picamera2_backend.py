@@ -62,7 +62,7 @@ class _Ctx:
         picam2.start_recording(self.encoder, FileOutput(self.manager.output))
         with self.manager.cam_ctrl_lock:
             apply_controls(picam2, dict(self.manager.cam_ctrl), af_locked=self.manager.af_locked,
-                           awb_gains=self.manager.awb_locked_gains)
+                           awb_gains=self.manager.awb_locked_gains, lens_pos=self.manager.lens_position)
 
 
 # ── Jobs (run on the capture thread) ───────────────────────────────────────────
@@ -81,7 +81,7 @@ def job_still(picam2, ctx):
         picam2.start()
         with ctx.manager.cam_ctrl_lock:
             apply_controls(picam2, dict(ctx.manager.cam_ctrl), af_locked=ctx.manager.af_locked,
-                           awb_gains=ctx.manager.awb_locked_gains)
+                           awb_gains=ctx.manager.awb_locked_gains, lens_pos=ctx.manager.lens_position)
         time.sleep(0.3)             # a couple of frames for AE/AWB after the mode change
         req = picam2.capture_request()
         try:
@@ -134,7 +134,7 @@ def job_record_stop(picam2, ctx):
 
 # ── Controls ───────────────────────────────────────────────────────────────────
 
-def apply_controls(picam2, c, af_locked=False, awb_gains=None):
+def apply_controls(picam2, c, af_locked=False, awb_gains=None, lens_pos=None):
     """picamera2 ISP: Brightness -1..1, Saturation 0..2, Sharpness 0..16, Contrast 0..32.
 
     af_locked keeps the lens where a timelapse fixed it (AfMode 0); awb_gains
@@ -166,6 +166,8 @@ def apply_controls(picam2, c, af_locked=False, awb_gains=None):
             _af_range = {"normal": 0, "macro": 1, "full": 2}
             if af_locked:
                 controls["AfMode"] = 0
+                if lens_pos is not None:
+                    controls["LensPosition"] = float(lens_pos)
             else:
                 controls["AfMode"] = _af_mode.get(c.get("af_mode", "continuous"), 2)
                 controls["AfRange"] = _af_range.get(c.get("af_range", "normal"), 0)
@@ -201,7 +203,7 @@ def run(manager):
         manager.set_handle(picam2)
         with manager.cam_ctrl_lock:
             apply_controls(picam2, dict(manager.cam_ctrl), af_locked=manager.af_locked,
-                           awb_gains=manager.awb_locked_gains)
+                           awb_gains=manager.awb_locked_gains, lens_pos=manager.lens_position)
         try:
             picam2.start_recording(encoder, FileOutput(manager.output))
             while not manager._stop.is_set() and not manager._restart.is_set():

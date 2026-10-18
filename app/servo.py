@@ -58,6 +58,7 @@ class ServoController:
         self._moving_to = None           # view id or "nudge" while a move runs
         self._dest = None                # (pan, tilt) of the move in progress
         self._last_error = None
+        self.motion = None               # dict while a motion timelapse owns the rig
 
         if enabled:
             try:
@@ -111,10 +112,12 @@ class ServoController:
             "active": active,
             "views": views,
             "timelapse": bool(self._timelapse_running and self._timelapse_running()),
+            "motion": self.motion,
             "error": self._last_error,
         }
 
     def goto(self, view_id: str) -> dict:
+        self._check_free()
         p = self._require().get(view_id)
         if not p:
             raise KeyError(view_id)
@@ -124,6 +127,7 @@ class ServoController:
     def nudge(self, dpan: float, dtilt: float) -> None:
         """Move by a few degrees from wherever the camera is (or is heading)."""
         self._require()
+        self._check_free()
         with self._job_lock:
             base = self._job or self._dest
         if base is None:
@@ -185,7 +189,7 @@ class ServoController:
 
     def move(self, pan: float, tilt: float, seq=None) -> None:
         """Set pan/tilt velocity.  Values clamped to -1.0..1.0; 0 = hold."""
-        if self._stale(seq):
+        if self._stale(seq) or self.motion is not None:
             return
         pan  = max(-1.0, min(1.0, float(pan)))
         tilt = max(-1.0, min(1.0, float(tilt)))
@@ -229,6 +233,48 @@ class ServoController:
         if self._rig is None:
             raise RuntimeError("no pan/tilt rig on this camera")
         return self._presets
+
+    def _check_free(self):
+        if self.motion is not None:
+            raise RuntimeError("a motion timelapse is moving the camera; stop it first")
+
+    # ── Motion timelapses (app/timelapse.py drives these) ─────────────────────
+
+    def limits(self):
+        self._require()
+        lo, hi = self._rig.tilt_limits
+        return {"pan": self._rig.pan_limit, "tilt": (lo, hi)}
+
+    def position(self):
+        r = self._require_rig_status()
+        return r["pan_deg"], r["tilt_deg"]
+
+    def pose_of(self, spec):
+        """(pan, tilt) for a view id, {"pan":..,"tilt":..}, or None = where it is now."""
+        if spec is None:
+            return self.position()
+        if isinstance(spec, dict):
+            cur = self.position()
+            return (float(spec.get("pan", cur[0])), float(spec.get("tilt", cur[1])))
+        p = self._require().get(str(spec))
+        if not p:
+            raise KeyError(spec)
+        return (p["pan"], p["tilt"])
+
+    def begin_motion(self, info):
+        """Claim the rig for a motion timelapse; user moves are refused until end_motion."""
+        self._require()
+        self._wait_idle()
+        self.motion = dict(info)
+
+    def end_motion(self):
+        self.motion = None
+
+    def move_for_motion(self, pan, tilt, direct=True):
+        """Blocking move used between timelapse frames."""
+        if direct and hasattr(self._rig, "move_direct"):
+            return self._rig.move_direct(pan, tilt)
+        return self._rig.move_to(pan, tilt)
 
     def _require_rig_status(self):
         self._require()

@@ -109,6 +109,7 @@ for d in app static templates scripts; do
 done
 rsync -a "$SRC/run.py" "$SRC/requirements.txt" "$SSH_HOST:$LIVE/"
 echo "$VERSION" | ssh "$SSH_HOST" "cat > $LIVE/VERSION"
+ssh "$SSH_HOST" "cp $LIVE/scripts/sync-to-bigpc.sh ~/sync-to-bigpc.sh && chmod +x ~/sync-to-bigpc.sh"
 
 say "Restarting $SERVICE"
 ssh "$SSH_HOST" "sudo -n systemctl restart $SERVICE"

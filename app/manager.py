@@ -77,6 +77,7 @@ class CameraManager:
 
         # Timelapse white-balance lock: fixed colour gains, or None for normal AWB.
         self.awb_locked_gains = None
+        self.lens_position = None               # dioptres, held with af_locked
 
         # Timelapse focus lock: while True the picamera2 backend keeps the lens
         # in manual (AfMode 0) even when it re-applies the user's controls after
@@ -277,7 +278,8 @@ class CameraManager:
                 v4l2_passthrough.apply_controls(None, c)
             return
         if CAM_BACKEND == "picamera2":
-            picamera2_backend.apply_controls(handle, c, af_locked=self.af_locked)
+            picamera2_backend.apply_controls(handle, c, af_locked=self.af_locked,
+                                              awb_gains=self.awb_locked_gains, lens_pos=self.lens_position)
         else:
             v4l2_opencv.apply_controls(handle, c)
 

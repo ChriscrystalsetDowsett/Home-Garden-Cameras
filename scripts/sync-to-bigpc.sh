@@ -9,6 +9,9 @@
 #   (tl_*), raw recordings (*.mjpeg / *.wav) or ffmpeg list files. Those are
 #   still being written, and the app deletes them itself when it is done.
 # - Thumbnails stay on the Pi so the gallery keeps its history.
+# - Finished timelapse sessions (data/timelapse/<name>/ with a DONE marker) go
+#   to <dest>/timelapse-frames/<name>/ and leave the Pi; their video goes with
+#   the other videos.
 # - rsync deletes a Pi copy only after it arrived intact (--remove-source-files).
 # - Writes ~/.sync-status.json (last run, last success, files moved) for the
 #   health check, and keeps the last 300 lines of ~/sync-to-bigpc.log.
@@ -48,6 +51,21 @@ else
         fi
         rm -f "$list"
     done
+
+    # Finished timelapse sessions: the full-quality frames, kept for regrading.
+    if [ $rc -eq 0 ] && [ -d "$APP/timelapse" ]; then
+        for dir in "$APP"/timelapse/*/; do
+            [ -f "$dir/DONE" ] || continue
+            [ -n "$(find "$dir/DONE" -mmin +10)" ] || continue
+            name=$(basename "$dir")
+            if rsync -a $DRY --remove-source-files -e "$SSH" "$dir" "$BIGPC:$DEST/timelapse-frames/$name/" >> "$LOG" 2>&1; then
+                [ -z "$DRY" ] && find "$dir" -type d -empty -delete
+                log "timelapse frames: $name moved"; moved=$((moved + 1))
+            else
+                r=$?; log "timelapse frames: $name rsync FAILED rc=$r"; rc=$r
+            fi
+        done
+    fi
 fi
 
 now=$(date -Iseconds)

@@ -285,13 +285,57 @@ def gallery():
 
 # ── Timelapse ──────────────────────────────────────────────────────────────────
 
+@app.route("/api/timelapse/presets")
+def tl_presets():
+    """Timelapse presets; motion presets and saved views only on cameras with a rig."""
+    from .timelapse import PRESETS, MOTION_PRESETS
+    rig = servo.enabled
+    views = [{"id": v["id"], "name": v["name"]} for v in servo.ptz_state().get("views", [])] if rig else []
+    return jsonify({"presets": PRESETS, "motion": MOTION_PRESETS if rig else [],
+                    "views": views, "backend": CAM_BACKEND})
+
+
+def _tl_request():
+    """(interval, duration, quality, motion, title) from a start/preview request body."""
+    from .timelapse import PRESETS, MOTION_PRESETS, motion_for_preset
+    payload = request.get_json(silent=True) or {}
+    preset = payload.get("preset")
+    base = next((p for p in PRESETS + MOTION_PRESETS if p["id"] == preset), {}) if preset else {}
+    interval = float(payload.get("interval", base.get("interval", 10)))
+    duration = float(payload.get("duration", base.get("duration", 0)) or 0)
+    quality  = payload.get("quality", base.get("quality", "auto"))
+    motion   = payload.get("motion")
+    if preset and any(m["id"] == preset for m in MOTION_PRESETS):
+        motion = motion_for_preset(preset, payload.get("from"), payload.get("to"))
+    title = payload.get("title") or base.get("name")
+    return interval, duration, quality, motion, title
+
+
 @app.route("/api/timelapse/start", methods=["POST"])
 def tl_start():
-    payload  = request.json or {}
-    interval = payload.get("interval", 5)
-    duration = payload.get("duration", 0)
-    timelapse.start(interval, duration)
-    return jsonify({"ok": True, **timelapse.status()})
+    try:
+        interval, duration, quality, motion, title = _tl_request()
+        status = timelapse.start(interval, duration, quality=quality, motion=motion, title=title)
+    except KeyError:
+        return _err("NO_SUCH_VIEW", "that view no longer exists", 404)
+    except (ValueError, RuntimeError) as e:
+        return _err("CANNOT_START", str(e), 409)
+    return jsonify({"ok": True, **status})
+
+
+@app.route("/api/timelapse/preview", methods=["POST"])
+def tl_preview():
+    """Run a motion path quickly (no frames) to check the framing."""
+    from .timelapse import preview_motion
+    try:
+        _, _, _, motion, _ = _tl_request()
+        if not motion:
+            return _err("NO_MOTION", "choose a moving timelapse to preview", 400)
+        return jsonify({"ok": True, **preview_motion(motion)})
+    except KeyError:
+        return _err("NO_SUCH_VIEW", "that view no longer exists", 404)
+    except (ValueError, RuntimeError) as e:
+        return _err("CANNOT_PREVIEW", str(e), 409)
 
 
 @app.route("/api/timelapse/stop", methods=["POST"])
@@ -302,7 +346,7 @@ def tl_stop():
 
 @app.route("/api/timelapse/status")
 def tl_status():
-    return jsonify(timelapse.status())
+    return jsonify({**timelapse.status(), "build": get_compile_status()})
 
 
 @app.route("/api/timelapse/compile_status")
