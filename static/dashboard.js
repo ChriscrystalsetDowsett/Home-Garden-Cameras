@@ -185,7 +185,14 @@ function openDrawer(tile) {
 
   document.getElementById('drawer-title').textContent    = tile.dataset.name;
   document.getElementById('drawer-full-btn').href        = tile.dataset.fullUrl;
-  document.getElementById('drawer-greenhouse-wrap').style.display = activeIdx === 2 ? '' : 'none';
+  // Optional per-camera link (settings.yaml → cameras[].link: {label, url})
+  const linkWrap = document.getElementById('drawer-link-wrap');
+  linkWrap.style.display = tile.dataset.linkUrl ? '' : 'none';
+  if (tile.dataset.linkUrl) {
+    const a = document.getElementById('drawer-link-btn');
+    a.href = tile.dataset.linkUrl;
+    a.textContent = tile.dataset.linkLabel + ' →';
+  }
   document.getElementById('drawer-offline-msg').classList.remove('show');
   document.getElementById('drawer-status').textContent   = '';
   document.getElementById('drawer-tl-strip').style.display = 'none';

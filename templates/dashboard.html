@@ -32,8 +32,10 @@
       </span>
       <span class="app-clock" id="app-clock"></span>
       <nav class="app-nav">
-        <a href="https://greenhouse.chrisdowsett.com" target="_blank" rel="noopener">Greenhouse Monitor</a>
-        <a href="https://greenhousejournal.chrisdowsett.com" target="_blank" rel="noopener">Journal</a>
+        {% for link in links %}
+        <a href="{{ link.url }}" target="_blank" rel="noopener">{{ link.label }}</a>
+        {% endfor %}
+        <a href="/dashboard/devices" title="Signed-in devices">Devices</a>
       </nav>
     </div>
   </header>
@@ -45,6 +47,8 @@
            data-idx="{{ loop.index0 }}"
            data-name="{{ cam.name | e }}"
            data-full-url="/camera/{{ loop.index0 }}/"
+           data-link-url="{{ (cam.link or {}).url or '' }}"
+           data-link-label="{{ (cam.link or {}).label or '' }}"
            onclick="openDrawer(this)">
 
         <div class="tile-stream-wrap">
@@ -167,10 +171,8 @@
       </a>
     </div>
 
-    <div class="drawer-full-wrap" id="drawer-greenhouse-wrap" style="display:none">
-      <a href="https://greenhouse.chrisdowsett.com" target="_blank" rel="noopener noreferrer" class="drawer-full-btn">
-        Greenhouse Monitor →
-      </a>
+    <div class="drawer-full-wrap" id="drawer-link-wrap" style="display:none">
+      <a id="drawer-link-btn" href="#" target="_blank" rel="noopener noreferrer" class="drawer-full-btn"></a>
     </div>
   </div>
 

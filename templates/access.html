@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Garden Cams">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
+<title>{% if mode == 'devices' %}Devices{% elif mode == 'join' %}Join{% else %}Sign in{% endif %} · Garden Cameras</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+*{-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#070d07;--surface:#0d180d;--surface2:#132013;--border:#1a2e1a;
+  --green:#22c55e;--green-dk:#166534;--green-md:#16a34a;--green-lt:#4ade80;
+  --text:#edf6ed;--muted:#87a887;--dim:#4a6b4a;--red:#ef4444;--radius:14px;
+}
+html,body{background:var(--bg)}
+body{
+  background-image:radial-gradient(ellipse 80% 40% at 50% -5%,rgba(34,197,94,.07) 0%,transparent 70%);
+  color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  min-height:100vh;display:flex;align-items:flex-start;justify-content:center;
+  padding:max(48px,env(safe-area-inset-top)) 16px 32px;
+}
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:32px 24px 28px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.5);
+}
+.logo{width:52px;height:52px;background:var(--green-dk);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 18px}
+h1{font-size:19px;font-weight:700;color:var(--green-lt);text-align:center;margin-bottom:6px}
+.lead{font-size:13px;line-height:1.45;color:var(--muted);text-align:center;margin-bottom:22px}
+label{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);margin:14px 0 6px}
+input{width:100%;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);
+  border-radius:9px;color:var(--text);font-size:16px;outline:none;transition:border-color .15s}
+input:focus{border-color:var(--green-md)}
+.err{font-size:13px;color:var(--red);background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);
+  border-radius:8px;padding:9px 12px;margin-bottom:6px}
+.btn{display:block;width:100%;margin-top:18px;padding:13px;border:none;border-radius:10px;
+  background:linear-gradient(135deg,var(--green-dk),var(--green-md));color:#fff;
+  font-size:15px;font-weight:600;cursor:pointer;text-align:center;text-decoration:none}
+.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn:active{opacity:.85}
+.note{font-size:12px;color:var(--dim);text-align:center;margin-top:16px;line-height:1.45}
+.list{list-style:none;margin-top:6px}
+.dev{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--border)}
+.dev:first-child{border-top:none}
+.dev-main{flex:1;min-width:0}
+.dev-name{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev-meta{font-size:12px;color:var(--muted);margin-top:2px}
+.this{font-size:11px;font-weight:700;color:var(--green-lt);background:rgba(34,197,94,.12);
+  border-radius:6px;padding:2px 6px;margin-left:6px;vertical-align:2px}
+.small-btn{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:8px;
+  padding:7px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
+.small-btn.danger{color:#fca5a5;border-color:rgba(239,68,68,.35)}
+.invite{margin-top:18px;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--surface2);display:none}
+.invite.show{display:block}
+.invite p{font-size:13px;color:var(--muted);line-height:1.45}
+.invite .qr{display:flex;justify-content:center;margin:14px 0 4px}
+.invite .qr svg{width:180px;height:180px;background:#fff;border-radius:10px;padding:8px}
+.link-box{font-size:12px;color:var(--text);word-break:break-all;background:var(--bg);border-radius:8px;padding:9px 10px;margin-top:10px}
+.back{display:inline-block;font-size:13px;color:var(--muted);text-decoration:none;margin-bottom:14px}
+h2{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:22px 0 4px}
+</style>
+</head>
+<body>
+<div class="card">
+
+{% if mode == 'login' %}
+  <div class="logo">🌿</div>
+  <h1>Garden Cameras</h1>
+  <p class="lead">Sign in once on this device. It stays signed in, so you won't be asked again.</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="post">
+    <label for="pw">Password</label>
+    <input type="password" id="pw" name="password" autofocus autocomplete="current-password">
+    <label for="nm">Name this device <span style="text-transform:none;letter-spacing:0">(optional)</span></label>
+    <input type="text" id="nm" name="name" placeholder="{{ suggested }}" autocomplete="off" maxlength="60">
+    <button class="btn" type="submit">Sign in</button>
+  </form>
+  <p class="note">No password handy? Ask someone who is signed in to send you an invite from <b>Devices</b>.</p>
+
+{% elif mode == 'join' %}
+  <div class="logo">🌿</div>
+  {% if valid %}
+  <h1>Add this device</h1>
+  <p class="lead">{{ by }} invited this device to Garden Cameras. Tap below and it stays signed in.</p>
+  <form method="post">
+    <label for="nm">Name this device</label>
+    <input type="text" id="nm" name="name" value="{{ suggested }}" autocomplete="off" maxlength="60">
+    <button class="btn" type="submit">Join Garden Cameras</button>
+  </form>
+  {% else %}
+  <h1>This invite has expired</h1>
+  <p class="lead">Invites work once, for 15 minutes. Ask for a new one, or sign in with the password.</p>
+  <a class="btn ghost" href="/dashboard/login">Sign in with password</a>
+  {% endif %}
+
+{% elif mode == 'devices' %}
+  <a class="back" href="/dashboard">&#8249; Cameras</a>
+  <h1 style="text-align:left">Signed-in devices</h1>
+  <p class="lead" style="text-align:left;margin-bottom:8px">These phones and computers can open the cameras without a password. Sign out any you don't recognise.</p>
+  <ul class="list">
+  {% for d in devices %}
+    <li class="dev">
+      <div class="dev-main">
+        <div class="dev-name">{{ d.name }}{% if d.id == me %}<span class="this">This device</span>{% endif %}</div>
+        <div class="dev-meta">Last used {{ d.last_seen_txt }} · added {{ d.created_txt }}</div>
+      </div>
+      <form method="post" action="/dashboard/devices/{{ d.id }}/signout"
+            onsubmit="return confirm('Sign out {{ d.name|e }}?')">
+        <button class="small-btn{% if d.id != me %} danger{% endif %}" type="submit">Sign out</button>
+      </form>
+    </li>
+  {% endfor %}
+  </ul>
+
+  <button class="btn" id="invite-btn" type="button" onclick="makeInvite()">Add a device</button>
+  <div class="invite" id="invite">
+    <p>Send this link to the new phone or iPad, or scan the code with its camera. It works once, for the next 15 minutes.</p>
+    <div class="qr" id="invite-qr"></div>
+    <div class="link-box" id="invite-link"></div>
+    <button class="btn ghost" id="share-btn" type="button" onclick="shareInvite()">Share link…</button>
+  </div>
+
+  {% if devices|length > 1 %}
+  <form method="post" action="/dashboard/devices/signout-others"
+        onsubmit="return confirm('Sign out every device except this one?')">
+    <button class="btn ghost" type="submit" style="margin-top:12px">Sign out all other devices</button>
+  </form>
+  {% endif %}
+
+<script>
+let inviteUrl = null;
+async function makeInvite() {
+  const btn = document.getElementById('invite-btn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/dashboard/devices/invite', {method: 'POST'});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'failed');
+    inviteUrl = d.url;
+    document.getElementById('invite-link').textContent = d.url;
+    document.getElementById('invite-qr').innerHTML = d.qr_svg || '';
+    document.getElementById('invite').classList.add('show');
+    btn.textContent = 'New invite link';
+    if (!navigator.share) document.getElementById('share-btn').textContent = 'Copy link';
+  } catch (e) {
+    alert('Could not make an invite: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function shareInvite() {
+  if (!inviteUrl) return;
+  if (navigator.share) {
+    try { await navigator.share({title: 'Garden Cameras', text: 'Tap to add your device to Garden Cameras', url: inviteUrl}); } catch (_) {}
+  } else {
+    await navigator.clipboard.writeText(inviteUrl);
+    document.getElementById('share-btn').textContent = 'Copied';
+  }
+}
+</script>
+{% endif %}
+
+</div>
+</body>
+</html>

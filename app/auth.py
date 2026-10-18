@@ -2,11 +2,12 @@
 
 Model:
 - All GET / HEAD requests pass unauthenticated (they are read-only).
-- All other methods (POST/DELETE/PUT/PATCH) require either:
-    (a) the client be on 127.0.0.1 / ::1 (loopback bypass — keeps pi4 cron
-        `curl -X POST http://localhost:8080/...` working with zero config), or
-    (b) the request carry `Authorization: Bearer <API_TOKEN>` OR an
-        equivalent HttpOnly cookie set on dashboard login.
+- All other methods (POST/DELETE/PUT/PATCH) require one of:
+    (a) the client be on 127.0.0.1 / ::1 (loopback bypass — keeps local cron
+        `curl -X POST http://localhost:8080/...` working with zero config);
+        never for requests relayed by cloudflared or another proxy;
+    (b) `Authorization: Bearer <API_TOKEN>` (the camera wall's proxy sends it);
+    (c) a signed-in device (see app/access.py).
 - If API_TOKEN is not configured, EVERY mutating request fails 500 —
   fail closed rather than run a token-less production server.
 """
@@ -14,6 +15,8 @@ import hmac
 from functools import wraps
 
 from flask import current_app, jsonify, request
+
+from . import access
 
 
 COOKIE_NAME = "hgc_session"
@@ -31,7 +34,8 @@ def _is_loopback():
     peer = request.remote_addr or ""
     if peer not in ("127.0.0.1", "::1"):
         return False
-    return not request.headers.get("X-Forwarded-For")
+    # cloudflared also connects from loopback; its requests are the internet.
+    return not (request.headers.get("X-Forwarded-For") or access.via_tunnel())
 
 
 def _token_matches(supplied):
@@ -45,9 +49,6 @@ def _supplied_token():
     hdr = request.headers.get("Authorization", "")
     if hdr.startswith("Bearer "):
         return hdr[7:].strip()
-    cookie = request.cookies.get(COOKIE_NAME, "")
-    if cookie:
-        return cookie
     return ""
 
 
@@ -55,14 +56,18 @@ def before_request_guard():
     """Flask `@before_request` hook — attach with `app.before_request(before_request_guard)`."""
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return None
+    if request.path == "/dashboard/login" or request.path.startswith("/dashboard/join/"):
+        return None             # the sign-in forms are how a device gets in
     if _is_loopback():
         return None
     if _token_matches(_supplied_token()):
         return None
+    if access.current_device() is not None:
+        return None
     return jsonify({
         "ok": False,
         "error": "AUTH_REQUIRED",
-        "message": "Bearer token or session cookie required for mutating requests.",
+        "message": "Sign in on this device (or send the Bearer token) to change anything.",
     }), 401
 
 
@@ -73,7 +78,7 @@ def require_token(fn):
     """
     @wraps(fn)
     def wrapped(*args, **kwargs):
-        if _is_loopback() or _token_matches(_supplied_token()):
+        if _is_loopback() or _token_matches(_supplied_token()) or access.current_device():
             return fn(*args, **kwargs)
         return jsonify({
             "ok": False,

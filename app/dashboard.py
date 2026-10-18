@@ -9,88 +9,16 @@ from functools import wraps
 from flask import Blueprint, Response, make_response, jsonify, render_template, request, \
                   session, redirect, stream_with_context
 
-from .config import CAMERAS, TILE_QUALITY, DASHBOARD_PASSWORD, API_TOKEN
-from .auth import COOKIE_NAME
+from .config import CAMERAS, TILE_QUALITY, DASHBOARD_PASSWORD, API_TOKEN, DASHBOARD_LINKS
+from . import access
 
 dashboard = Blueprint("dashboard", __name__)
 
-# ── Authentication ─────────────────────────────────────────────────────────────
-
-_LOGIN_PAGE = """\
-<!DOCTYPE html><html lang="en"><head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>Garden Cams — Login</title>
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-*{-webkit-tap-highlight-color:transparent}
-:root{
-  --bg:#070d07;--surface:#0d180d;--surface2:#132013;--border:#1a2e1a;
-  --green:#22c55e;--green-dk:#166534;--green-md:#16a34a;--green-lt:#4ade80;
-  --text:#edf6ed;--muted:#87a887;--dim:#4a6b4a;--red:#ef4444;--radius:12px;
-}
-body{
-  background:var(--bg);
-  background-image:radial-gradient(ellipse 80% 40% at 50% -5%,rgba(34,197,94,.07) 0%,transparent 70%);
-  color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-  min-height:100vh;display:flex;align-items:center;justify-content:center;
-}
-.card{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:36px 32px 32px;width:100%;max-width:360px;
-  box-shadow:0 8px 32px rgba(0,0,0,.5);
-}
-.logo{
-  width:52px;height:52px;background:var(--green-dk);border-radius:50%;
-  display:flex;align-items:center;justify-content:center;font-size:24px;
-  margin:0 auto 20px;
-}
-h1{font-size:18px;font-weight:700;color:var(--green-lt);text-align:center;margin-bottom:4px;}
-p{font-size:12px;color:var(--muted);text-align:center;margin-bottom:24px;}
-label{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;
-  text-transform:uppercase;color:var(--dim);margin-bottom:6px;}
-input[type=password]{
-  width:100%;padding:10px 14px;
-  background:var(--surface2);border:1px solid var(--border);border-radius:8px;
-  color:var(--text);font-size:14px;outline:none;
-  transition:border-color .15s;
-}
-input[type=password]:focus{border-color:var(--green-md);}
-.err{
-  font-size:12px;color:var(--red);background:rgba(239,68,68,.08);
-  border:1px solid rgba(239,68,68,.25);border-radius:7px;
-  padding:8px 12px;margin-bottom:14px;
-}
-button{
-  margin-top:16px;width:100%;padding:11px;
-  background:linear-gradient(135deg,var(--green-dk),var(--green-md));
-  color:#fff;border:none;border-radius:9px;
-  font-size:14px;font-weight:600;cursor:pointer;
-  transition:opacity .15s;
-}
-button:hover{opacity:.88;}
-</style>
-</head><body>
-<div class="card">
-  <div class="logo">🌿</div>
-  <h1>Garden Cameras</h1>
-  <p>Enter the dashboard password to continue</p>
-  {error}
-  <form method="post">
-    <label for="pw">Password</label>
-    <input type="password" id="pw" name="password" autofocus autocomplete="current-password">
-    <button type="submit">Sign in</button>
-  </form>
-</div>
-</body></html>"""
-
+# ── Access: signed-in devices (see app/access.py) ──────────────────────────────
 
 def _authed():
-    """Return True if the current session is authenticated (or no password set)."""
-    if not DASHBOARD_PASSWORD:
-        return True
-    return session.get("dashboard_authed") is True
+    """True when this browser is a signed-in device (or no password is set)."""
+    return access.signed_in()
 
 
 def _require_auth(f):
@@ -102,39 +30,114 @@ def _require_auth(f):
     return _wrapped
 
 
+def _ago(ts):
+    if not ts:
+        return "never"
+    s = max(0, int(_time.time() - ts))
+    if s < 120:
+        return "just now"
+    if s < 7200:
+        return f"{s // 60} min ago"
+    if s < 172800:
+        return f"{s // 3600} h ago"
+    return _time.strftime("%-d %b %Y", _time.localtime(ts))
+
+
+def _page(mode, **kw):
+    resp = make_response(render_template("access.html", mode=mode, **kw))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @dashboard.route("/dashboard/login", methods=["GET", "POST"])
 def login():
-    if not DASHBOARD_PASSWORD:
+    if _authed():
         return redirect("/dashboard")
+    suggested = access.device_name_from_ua(request.headers.get("User-Agent"))
     error = ""
     if request.method == "POST":
         pw = request.form.get("password", "")
-        if hmac.compare_digest(pw, DASHBOARD_PASSWORD):
-            session["dashboard_authed"] = True
-            resp = redirect("/dashboard")
-            # Carry the local API_TOKEN so subsequent same-origin fetches to
-            # mutating routes (POST/DELETE) pass the auth guard. HttpOnly
-            # so JS can't read it; SameSite=Lax so top-level navigations
-            # from the same site keep the cookie.
-            if API_TOKEN:
-                resp.set_cookie(
-                    COOKIE_NAME, API_TOKEN,
-                    max_age=30 * 24 * 3600,
-                    httponly=True,
-                    samesite="Lax",
-                    secure=request.is_secure,
-                )
-            return resp
-        error = '<div class="err">Incorrect password — try again.</div>'
-    return _LOGIN_PAGE.replace("{error}", error), 200, {"Content-Type": "text/html; charset=utf-8"}
+        if hmac.compare_digest(pw.encode(), DASHBOARD_PASSWORD.encode()):
+            access.sign_in(request.form.get("name"))
+            return redirect("/dashboard")
+        _time.sleep(1)          # slow down guessing
+        error = "Incorrect password. Try again."
+    return _page("login", error=error, suggested=suggested)
+
+
+@dashboard.route("/dashboard/join/<code>", methods=["GET", "POST"])
+def join(code):
+    """Invite link: GET only shows the page; the POST (a tap) uses the invite."""
+    if request.method == "POST":
+        if access.redeem_invite(code, request.form.get("name")):
+            return redirect("/dashboard")
+        return _page("join", valid=False)
+    inv = access._load()["invites"].get(code)
+    return _page("join", valid=access.invite_valid(code), by=(inv or {}).get("by", "Someone"),
+                 suggested=access.device_name_from_ua(request.headers.get("User-Agent")))
 
 
 @dashboard.route("/dashboard/logout")
 def logout():
-    session.pop("dashboard_authed", None)
-    resp = redirect("/dashboard/login")
-    resp.delete_cookie(COOKIE_NAME)
-    return resp
+    dev = access.current_device()
+    if dev:
+        access.sign_out(dev["id"])
+    session.clear()
+    return redirect("/dashboard/login")
+
+
+@dashboard.route("/dashboard/devices")
+@_require_auth
+def devices():
+    me = (access.current_device() or {}).get("id")
+    devs = [dict(d, last_seen_txt=_ago(d.get("last_seen")),
+                 created_txt=_time.strftime("%-d %b %Y", _time.localtime(d.get("created", 0))))
+            for d in access.all_devices()]
+    return _page("devices", devices=devs, me=me)
+
+
+@dashboard.route("/dashboard/devices/<dev_id>/signout", methods=["POST"])
+@_require_auth
+def device_signout(dev_id):
+    me = (access.current_device() or {}).get("id")
+    access.sign_out(dev_id)
+    if dev_id == me:
+        session.clear()
+        return redirect("/dashboard/login")
+    return redirect("/dashboard/devices")
+
+
+@dashboard.route("/dashboard/devices/signout-others", methods=["POST"])
+@_require_auth
+def device_signout_others():
+    me = (access.current_device() or {}).get("id")
+    for d in access.all_devices():
+        if d["id"] != me:
+            access.sign_out(d["id"])
+    return redirect("/dashboard/devices")
+
+
+@dashboard.route("/dashboard/devices/invite", methods=["POST"])
+@_require_auth
+def device_invite():
+    me = access.current_device() or {}
+    code, expires = access.create_invite(me.get("name", "Someone"))
+    # Behind the tunnel the app sees plain http; the link must be the public https one.
+    base = (f"https://{request.host}" if access.via_tunnel() else request.host_url.rstrip("/"))
+    url = base + "/dashboard/join/" + code
+    return jsonify({"ok": True, "url": url, "expires": expires, "qr_svg": _qr_svg(url)})
+
+
+def _qr_svg(text):
+    """QR code as inline SVG when the qrcode package is installed, else ''."""
+    try:
+        import qrcode
+        import qrcode.image.svg
+        img = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, box_size=10, border=1)
+        svg = img.to_string(encoding="unicode")
+        return svg[svg.find("<svg"):]
+    except Exception:
+        return ""
 
 
 _API_TIMEOUT    = 8    # seconds for regular JSON API calls
@@ -163,16 +166,8 @@ def _cam_base(idx):
 def index():
     hero_idx = next((i for i, c in enumerate(CAMERAS) if c.get("hero")), 0)
     resp = make_response(render_template("dashboard.html", cameras=CAMERAS,
-                                         tile_quality=TILE_QUALITY, hero_idx=hero_idx))
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    return resp
-
-
-@dashboard.route("/dashboard/v1")
-@_require_auth
-def index_v1():
-    """Archived pre-redesign dashboard, kept for before/after reference."""
-    resp = make_response(render_template("dashboard_v1.html", cameras=CAMERAS, tile_quality=TILE_QUALITY))
+                                         tile_quality=TILE_QUALITY, hero_idx=hero_idx,
+                                         links=DASHBOARD_LINKS))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return resp
 
@@ -291,7 +286,7 @@ def _proxy(idx, path):
     # Each camera in settings.yaml → cameras[] may declare `api_token: ...`;
     # without it the remote Pi's auth guard will reject mutating verbs.
     cam_cfg   = CAMERAS[idx] if 0 <= idx < len(CAMERAS) else {}
-    cam_token = cam_cfg.get("api_token", "")
+    cam_token = cam_cfg.get("api_token") or API_TOKEN     # one fleet token by default
     if cam_token and request.method in ("POST", "DELETE", "PUT", "PATCH"):
         fwd_headers["Authorization"] = f"Bearer {cam_token}"
 

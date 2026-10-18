@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import time
+from datetime import timedelta
 from pathlib import Path
 from PIL import Image
 
@@ -33,6 +34,7 @@ from .stats import get_stats, get_pi_info
 from .dashboard import dashboard as dashboard_bp
 from .servo import servo
 from . import scheduler
+from . import access
 from . import auth as auth_mod
 from . import logs as logs_mod
 
@@ -68,15 +70,14 @@ app.secret_key = SECRET_KEY
 app.config["API_TOKEN"] = API_TOKEN
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.permanent_session_lifetime = timedelta(days=365)   # signed-in devices stay signed in
 app.register_blueprint(dashboard_bp)
 
-if GREENHOUSE_HOST:
-    from .greenhouse import greenhouse as greenhouse_bp
-    app.register_blueprint(greenhouse_bp)
 
 
 # ── Auth guard on every mutating request ──────────────────────────────────────
-app.before_request(auth_mod.before_request_guard)
+app.before_request(access.tunnel_guard)            # internet requests need a signed-in device
+app.before_request(auth_mod.before_request_guard)  # changes need a device, the token or loopback
 
 
 # ── CORS — whitelist (empty list = same-origin only) ──────────────────────────

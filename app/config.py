@@ -68,6 +68,8 @@ CAM_USB_ID  = _cfg["camera"].get("usb_id", "046d:0843")    # vendor:product for 
 CAMERAS            = _cfg.get("cameras", [])
 _dash              = _cfg.get("dashboard", {})
 TILE_QUALITY       = _dash.get("tile_quality", "low")
+# Header links on the camera wall: [{label, url}, ...]
+DASHBOARD_LINKS    = [l for l in (_dash.get("links") or []) if l.get("url") and l.get("label")]
 DASHBOARD_PASSWORD = _dash.get("password", "")
 SECRET_KEY         = _dash.get("secret_key", "")
 
@@ -80,10 +82,6 @@ SERVO_SWIPE       = bool(_servo.get("swipe", False))          # fullscreen drag 
 SERVO_NUDGE_PAN   = float(_servo.get("nudge_pan_deg", 5))     # arrow-button step sizes
 SERVO_NUDGE_TILT  = float(_servo.get("nudge_tilt_deg", 4))
 
-# ── Greenhouse proxy ──────────────────────────────────────────────────────────
-_gh             = _cfg.get("greenhouse", {})
-GREENHOUSE_HOST = _gh.get("host", "")
-GREENHOUSE_PORT = int(_gh.get("port", 5000))
 
 # ── Camera schedule ───────────────────────────────────────────────────────────
 _sched             = _cfg.get("schedule", {})

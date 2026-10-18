@@ -37,13 +37,19 @@ def test_wrong_bearer_token_401(client):
     assert r.status_code == 401
 
 
-def test_session_cookie_allows_post(client):
-    # The test client's cookie jar owns the Cookie header — set it there
-    # rather than via headers=, which the jar silently overrides.
+def test_old_token_cookie_no_longer_accepted(client):
+    # Before signed-in devices, login put the fleet token itself in a cookie.
+    # That could not be revoked per device, so it is no longer honoured.
     client.set_cookie("hgc_session", TEST_TOKEN)
     r = client.post(MUTATING_URL, json=PAYLOAD, environ_base=REMOTE)
-    assert r.status_code == 200
+    assert r.status_code == 401
     client.delete_cookie("hgc_session")
+
+
+def test_tunnel_request_from_loopback_is_not_trusted(client):
+    # cloudflared connects from 127.0.0.1; Cf-Connecting-Ip marks the internet.
+    r = client.post(MUTATING_URL, json=PAYLOAD, headers={"Cf-Connecting-Ip": "203.0.113.9"})
+    assert r.status_code == 401
 
 
 def test_xff_spoof_from_remote_peer_denied(client):
