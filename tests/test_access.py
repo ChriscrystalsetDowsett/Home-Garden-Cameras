@@ -110,3 +110,13 @@ def test_legacy_session_is_adopted(acc, client):
     assert len(acc.all_devices()) == 1
     assert client.get("/api/gallery", headers=TUNNEL).status_code == 200
     assert len(acc.all_devices()) == 1
+
+
+def test_legacy_adoption_makes_one_device_for_parallel_requests(acc, flask_app):
+    # Several tiles load at once from one browser, all carrying the old cookie.
+    clients = [flask_app.test_client() for _ in range(3)]
+    for c in clients:
+        with c.session_transaction() as s:
+            s["dashboard_authed"] = True
+        assert c.get("/api/gallery", headers={**TUNNEL, **IPHONE}).status_code == 200
+    assert len(acc.all_devices()) == 1

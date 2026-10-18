@@ -110,18 +110,32 @@ def current_device():
     return dict(dev, id=dev_id)
 
 
+LEGACY_REUSE_S = 60          # one browser fires many requests at once; adopt it once
+STALE_DUP_S    = 2 * 86400   # adopted duplicates never used again are pruned after this
+
+
 def _adopt_legacy_session():
-    dev = sign_in(device_name_from_ua(request.headers.get("User-Agent")) + " (signed in before 18 Oct)")
+    name = device_name_from_ua(request.headers.get("User-Agent")) + " (signed in before 18 Oct)"
+    ip, now = _client_ip(), time.time()
+    for dev_id, d in _load()["devices"].items():
+        if d.get("legacy") and d["name"] == name and d.get("ip") == ip and now - d["created"] < LEGACY_REUSE_S:
+            session.permanent = True
+            session[SESSION_KEY] = dev_id
+            session.pop("dashboard_authed", None)
+            return dict(d, id=dev_id)
+    dev = sign_in(name, legacy=True)
     session.pop("dashboard_authed", None)
     return dev
 
 
-def sign_in(name=None):
+def sign_in(name=None, legacy=False):
     """Register this browser as a signed-in device and remember it for a year."""
     dev_id = secrets.token_urlsafe(16)
     now = int(time.time())
     name = (name or "").strip()[:60] or device_name_from_ua(request.headers.get("User-Agent"))
     rec = {"name": name, "created": now, "last_seen": now, "ip": _client_ip()}
+    if legacy:
+        rec["legacy"] = True
     with _Locked() as d:
         d["devices"][dev_id] = rec
     session.permanent = True
@@ -146,7 +160,13 @@ def rename(dev_id, name):
 
 
 def all_devices():
-    devs = [dict(v, id=k) for k, v in _load()["devices"].items()]
+    now = time.time()
+    with _Locked() as d:
+        for k in [k for k, v in d["devices"].items()
+                  if v.get("legacy") and v["last_seen"] - v["created"] < 120
+                  and now - v["created"] > STALE_DUP_S]:
+            del d["devices"][k]           # a duplicate from adoption that no browser kept
+        devs = [dict(v, id=k) for k, v in d["devices"].items()]
     return sorted(devs, key=lambda v: v.get("last_seen", 0), reverse=True)
 
 
