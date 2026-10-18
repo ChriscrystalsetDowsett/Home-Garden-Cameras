@@ -1,68 +1,60 @@
-#!/usr/bin/env bash
-# Nightly rsync of photos/videos to bigpc's media archive.
+#!/bin/bash
+# Nightly: move this camera's photos and videos to bigPC (same script on every Pi).
 #
-# Hardened vs v1:
-#   * set -euo pipefail — no silent failure
-#   * `--remove-source-files` runs ONLY after rsync returns 0 (data-loss guard)
-#   * PROJECT_DIR resolved from the script's own path — no hardcoded prefixes
-#   * mkdir -p on the log dir before writing
-#   * Remote log write is best-effort; local log is always attempted
+#   ~/sync-to-bigpc.sh            normal run (cron)
+#   ~/sync-to-bigpc.sh --dry-run  show what would move
+#
+# - Sends to bigPC's wired LAN address (Tailscale keys expire; the LAN doesn't).
+# - Only files older than 10 minutes, and never timelapse frames in progress
+#   (tl_*), raw recordings (*.mjpeg / *.wav) or ffmpeg list files. Those are
+#   still being written, and the app deletes them itself when it is done.
+# - Thumbnails stay on the Pi so the gallery keeps its history.
+# - rsync deletes a Pi copy only after it arrived intact (--remove-source-files).
+# - Writes ~/.sync-status.json (last run, last success, files moved) for the
+#   health check, and keeps the last 300 lines of ~/sync-to-bigpc.log.
+set -u
+BIGPC=chris@192.168.4.138
+PI=$(hostname -s); [ "$PI" = chris ] && PI=pi3          # pi3's hostname is "chris"
+APP=/home/chris/dev/apps/home-garden-cameras/data
+DEST=/mnt/storage/media/$PI
+[ "$PI" = pi4 ] && DEST=/mnt/storage/media/pi4/home-camera   # pi4/photos is the greenhouse archive
+LOG=$HOME/sync-to-bigpc.log
+STATUS=$HOME/.sync-status.json
+DRY=""; [ "${1:-}" = "--dry-run" ] && DRY="--dry-run"
+SSH="ssh -o BatchMode=yes -o ConnectTimeout=15"
 
-set -euo pipefail
+log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
+rc=0; moved=0
+log "=== sync start -> $BIGPC:$DEST $DRY"
+if ! $SSH "$BIGPC" "mkdir -p '$DEST/photos' '$DEST/videos' '$DEST/logs'" 2>>"$LOG"; then
+    log "bigPC unreachable"; rc=255
+else
+    for kind in photos videos; do
+        src="$APP/$kind"; [ -d "$src" ] || continue
+        list=$(mktemp)
+        (cd "$src" && find . -maxdepth 1 -type f -mmin +10 \
+            ! -name '*.thumb.jpg' ! -name 'tl_*' ! -name '*.mjpeg' ! -name '*.wav' \
+            ! -name '_tl_list_*' ! -name '*.tmp' ! -name '.*' -printf '%P\n') > "$list"
+        n=$(wc -l < "$list")
+        if [ "$n" -gt 0 ]; then
+            if rsync -a $DRY --files-from="$list" --remove-source-files -e "$SSH" \
+                    "$src/" "$BIGPC:$DEST/$kind/" >> "$LOG" 2>&1; then
+                log "$kind: $n file(s) moved"; moved=$((moved + n))
+            else
+                r=$?; log "$kind: rsync FAILED rc=$r"; rc=$r
+            fi
+        else
+            log "$kind: nothing to move"
+        fi
+        rm -f "$list"
+    done
+fi
 
-PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")"/.. && pwd -P)"
-LOCAL_LOG_DIR="/home/chris/dev/logs"
-LOCAL_LOG="${LOCAL_LOG_DIR}/sync-to-bigpc.log"
-DEST="chris@100.75.224.125:/mnt/storage/media/pi4"
-REMOTE_LOG="/mnt/storage/media/pi4/logs/sync.log"
-
-mkdir -p "$LOCAL_LOG_DIR"
-
-_ts() { date '+%Y-%m-%d %H:%M:%S'; }
-
-log() {
-    local line="$1"
-    printf '%s\n' "$line" >> "$LOCAL_LOG"
-    # Best-effort remote log; ignore SSH failures — local log is authoritative.
-    ssh -o ConnectTimeout=5 chris@100.75.224.125 "cat >> $REMOTE_LOG" <<< "$line" 2>/dev/null || true
-}
-
-log ""
-log "=== sync-to-bigpc started: $(_ts) ==="
-log "project=${PROJECT_DIR}"
-
-rsync_kind() {
-    # Two-pass sync: transfer first, THEN delete locals only if rsync succeeded.
-    # Prevents data loss when rsync partially fails and --remove-source-files
-    # would otherwise trash unsynced photos.
-    local kind="$1"
-    local src="${PROJECT_DIR}/data/${kind}"
-    local dst="${DEST}/${kind}/"
-
-    if [ ! -d "$src" ]; then
-        log "--- ${kind}/ not found locally, skipping ---"
-        return 0
-    fi
-
-    log "--- rsyncing ${kind} (copy pass) ---"
-    if ! rsync -avz --ignore-missing-args --exclude='*.thumb.jpg' \
-            "${src}/" "$dst" >>"$LOCAL_LOG" 2>&1; then
-        log "ERROR: rsync ${kind} FAILED — leaving source files in place"
-        return 1
-    fi
-
-    log "--- pruning synced ${kind} sources ---"
-    if ! rsync -av --ignore-missing-args --exclude='*.thumb.jpg' \
-            --remove-source-files "${src}/" "$dst" >>"$LOCAL_LOG" 2>&1; then
-        log "WARN: prune pass for ${kind} failed — sources retained"
-        return 0   # non-fatal: files are safely at destination already
-    fi
-    return 0
-}
-
-rc=0
-rsync_kind photos || rc=1
-rsync_kind videos || rc=1
-
-log "=== sync-to-bigpc finished: $(_ts) rc=${rc} ==="
-exit "$rc"
+now=$(date -Iseconds)
+prev_ok=$(python3 -c "import json;print(json.load(open('$STATUS')).get('last_ok',''))" 2>/dev/null)
+[ $rc -eq 0 ] && [ -z "$DRY" ] && prev_ok=$now
+printf '{"last_run": "%s", "last_ok": "%s", "rc": %d, "moved": %d}\n' "$now" "$prev_ok" "$rc" "$moved" > "$STATUS"
+log "=== sync end rc=$rc moved=$moved"
+[ -z "$DRY" ] && tail -n 20 "$LOG" | $SSH "$BIGPC" "cat >> '$DEST/logs/sync.log'" 2>/dev/null
+tail -n 300 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+exit $rc
