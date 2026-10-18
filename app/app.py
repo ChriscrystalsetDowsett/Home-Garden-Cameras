@@ -352,10 +352,11 @@ def audio_stream_raw():
 @app.route("/api/record/start", methods=["POST"])
 def record_start():
     payload = request.json or {}
-    crf     = int(payload.get("quality", 23))
-    audio   = bool(payload.get("audio", False))
-    ok      = video_recorder.start(crf=crf, audio=audio)
-    return jsonify({"ok": ok, **video_recorder.status()})
+    crf      = int(payload.get("quality", 23))
+    audio    = bool(payload.get("audio", False))
+    duration = max(0.0, min(3600.0, float(payload.get("duration", 0) or 0)))   # 0 = until stopped
+    ok       = video_recorder.start(crf=crf, audio=audio, duration=duration, camera=camera)
+    return jsonify({"ok": ok, **video_recorder.status()}), (200 if ok else 409)
 
 
 @app.route("/api/record/stop", methods=["POST"])

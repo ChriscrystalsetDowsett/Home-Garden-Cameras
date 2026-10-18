@@ -4,6 +4,7 @@ timelapse.py, and stats.py need no changes.
 """
 import io
 import logging
+import queue
 import threading
 import time
 from datetime import datetime
@@ -24,7 +25,7 @@ from .stream import StreamOutput
 
 # JPEG re-encode quality for effects + v4l2 snapshots (baseline).
 JPEG_QUALITY = 85
-STILL_CAPTURE_TIMEOUT_S = 5   # was 15 — cron retries in 3 min so fail fast
+STILL_CAPTURE_TIMEOUT_S = 12  # a 12 MP still takes ~3 s on a Pi 4, longer on a Pi 3
 
 
 def _link_type(iface):
@@ -69,13 +70,13 @@ class CameraManager:
         self._handle = None
         self._handle_lock = threading.Lock()
 
-        # picamera2 still-capture handshake: Flask thread sets _still_request,
-        # loop thread executes the capture and sets _still_done.
-        # _still_lock serialises concurrent snapshot requests.
-        self._still_lock = threading.Lock()
-        self._still_request = threading.Event()
-        self._still_done = threading.Event()
-        self._still_img = None
+        # picamera2 jobs: other threads queue work for the capture thread, which
+        # alone touches the camera (see camera_job and backends/picamera2_backend).
+        self._jobs = queue.Queue()
+        self._still_lock = threading.Lock()     # one full-res still at a time
+
+        # Timelapse white-balance lock: fixed colour gains, or None for normal AWB.
+        self.awb_locked_gains = None
 
         # Timelapse focus lock: while True the picamera2 backend keeps the lens
         # in manual (AfMode 0) even when it re-applies the user's controls after
@@ -151,28 +152,59 @@ class CameraManager:
         ok, enc = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, STREAM_JPEG_QUALITY])
         return enc.tobytes() if ok else frame
 
+    def effects_active(self):
+        """True when a live software effect (film look, tint, warmth, flip) changes the stream."""
+        with self.cam_ctrl_lock:
+            s = {k: self.cam_ctrl[k] for k in
+                 ("tint", "warmth", "hflip", "vflip", "film_filter", "film_strength")}
+        return ocv_pipeline.needs_ocv(s)
+
+    # ── Jobs on the capture thread (picamera2) ─────────────────────────────
+    def camera_job(self, fn, timeout=STILL_CAPTURE_TIMEOUT_S):
+        """Run fn(picam2, ctx) on the capture thread and return its result.
+
+        Raises RuntimeError when the camera isn't running or the job times out."""
+        if CAM_BACKEND != "picamera2" or self.get_handle() is None:
+            raise RuntimeError("camera not running")
+        box = {"done": threading.Event()}
+        self._jobs.put((fn, box))
+        if not box["done"].wait(timeout):
+            raise RuntimeError("camera busy (job timed out)")
+        if "error" in box:
+            raise RuntimeError(str(box["error"]))
+        return box.get("result")
+
+    def grab(self, full_res=True):
+        """(PIL image, metadata) from the sensor: a full-res still, or the next
+        video frame (no pause in the preview). picamera2 only."""
+        fn = picamera2_backend.job_still if full_res else picamera2_backend.job_frame
+        if full_res:
+            with self._still_lock:
+                return self.camera_job(fn)
+        return self.camera_job(fn)
+
     # ── Snapshot ───────────────────────────────────────────────────────────
-    def capture(self, prefix="Photo", filter_name="none", quality=85):
+    def capture(self, prefix="Photo", filter_name="none", quality=85, full_res=True,
+                dest_dir=None, description=None):
+        """Save a photo; returns its filename or None.
+
+        CSI cameras: straight from the sensor (full-res still, or a video frame
+        when full_res=False), JPEG-encoded once at quality 95 with 4:4:4 colour
+        and full EXIF. USB cameras: the current stream frame."""
         now = datetime.now()
         ts = now.strftime("%Y-%m-%d_%H-%M-%S")
-        exif_dt = now.strftime("%Y:%m:%d %H:%M:%S")
         filename = f"{prefix}_{ts}.jpg"
-        path = SNAPSHOT_DIR / filename
+        path = (dest_dir or SNAPSHOT_DIR) / filename
+        md = {}
 
         if CAM_BACKEND == "picamera2":
-            with self._still_lock:
-                if self.get_handle() is None:
-                    return None
-                self._still_img = None
-                self._still_done.clear()
-                self._still_request.set()
-                if not self._still_done.wait(timeout=STILL_CAPTURE_TIMEOUT_S):
-                    logging.warning("capture: still-capture timeout — loop wedged")
-                    return None
-                img = self._still_img
+            try:
+                img, md = self.grab(full_res=full_res)
+            except RuntimeError as e:
+                logging.warning("capture failed: %s", e)
+                return None
             if img is None:
                 return None
-            # Full-sensor still: always save at maximum JPEG quality.
             save_quality = 95
         else:
             with self.output.condition:
@@ -191,12 +223,31 @@ class CameraManager:
 
         if filter_name and filter_name != "none":
             img = ocv_pipeline.apply_pil_filter(img, filter_name)
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=save_quality)
-        path.write_bytes(buf.getvalue())
 
         with self.cam_ctrl_lock:
             ctrl = dict(self.cam_ctrl)
+
+        if CAM_BACKEND == "picamera2":
+            from . import exif
+            from .config import PI_NAME
+            if ctrl.get("hflip") or ctrl.get("vflip"):
+                img = img.transpose(Image.ROTATE_180) if ctrl.get("hflip") and ctrl.get("vflip") else \
+                      img.transpose(Image.FLIP_LEFT_RIGHT if ctrl.get("hflip") else Image.FLIP_TOP_BOTTOM)
+            blob = exif.build(
+                when=now, make="Raspberry Pi", model=self.model,
+                description=description or ("Timelapse frame" if prefix.startswith("tl") else "Photo"),
+                width=img.width, height=img.height, md=md, pi_name=PI_NAME,
+                manual_exposure=ctrl.get("exposure_time", 0) > 0,
+                manual_wb=ctrl.get("awb_mode", "auto") != "auto")
+            tmp = path.with_suffix(".part")
+            img.save(tmp, format="JPEG", quality=save_quality, subsampling=0,
+                     optimize=False, **({"exif": blob} if blob else {}))
+            tmp.replace(path)
+            return filename
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=save_quality)
+        path.write_bytes(buf.getvalue())
         meta = {
             "datetime": exif_dt,
             "make": "Raspberry Pi" if CAM_BACKEND == "picamera2" else "Logitech",

@@ -1,9 +1,9 @@
 """Video recorder — captures live MJPEG stream to file and converts to MP4."""
-import threading, time, subprocess
+import logging, threading, time, subprocess
 from datetime import datetime
 from pathlib import Path
 
-from .config import VIDEOS_DIR
+from .config import VIDEOS_DIR, CAM_BACKEND
 
 AUDIO_DEVICE = 'plughw:C930e,0'
 
@@ -129,6 +129,32 @@ def _convert_recording(src, dst, fps, crf=23, audio_src=None, start_ts=None):
         _extract_thumbnail(dst)
 
 
+def _finish_hw_recording(path, audio_src, start_ts):
+    """Add metadata (and audio when there is a mic) without re-encoding, then a thumbnail."""
+    tmp = path.with_suffix(".tmp.mp4")
+    iso_dt = start_ts[:10] + "T" + start_ts[11:].replace("-", ":") if start_ts else None
+    cmd = ["ffmpeg", "-y", "-i", str(path)]
+    if audio_src and Path(audio_src).exists():
+        cmd += ["-i", str(audio_src), "-c:a", "aac", "-b:a", "160k", "-shortest"]
+    cmd += ["-c:v", "copy", "-movflags", "+faststart",
+            "-metadata", f"title={path.stem}", "-metadata", "comment=Home Garden Cameras Video"]
+    if iso_dt:
+        cmd += ["-metadata", f"creation_time={iso_dt}"]
+    cmd += [str(tmp)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=300)
+        if r.returncode == 0:
+            tmp.replace(path)
+            if audio_src:
+                Path(audio_src).unlink(missing_ok=True)
+        else:
+            tmp.unlink(missing_ok=True)
+            logging.warning("finishing %s failed: %s", path.name, r.stderr.decode(errors="replace")[-300:])
+    except Exception as e:
+        logging.warning("finishing %s failed: %s", path.name, e)
+    _extract_thumbnail(path)
+
+
 class VideoRecorder:
     """Records the live MJPEG stream to a .mjpeg file then converts to MP4."""
 
@@ -142,22 +168,45 @@ class VideoRecorder:
         self._audio_proc = None
         self._audio_file = None
         self._audio_requested = False
+        self._hw = False
+        self._camera = None
+        self.limit = 0
+        self.last_result = None
 
-    def start(self, crf=23, audio=False):
+    def start(self, crf=23, audio=False, duration=0, camera=None):
+        """Start recording. duration > 0 stops by itself after that many seconds
+        (on the Pi, so a phone going to sleep doesn't matter).
+
+        CSI cameras record straight from the sensor with the hardware H.264
+        encoder (full quality, no CPU cost) unless a live effect (film look,
+        tint, warmth, flip) is on; then the effected stream is recorded instead."""
         with self._lock:
             if self.running:
                 return False
             ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            self.filename = f"Video_{ts}.mjpeg"
-            self._file = open(VIDEOS_DIR / self.filename, "wb")
-            self.frame_count = 0
-            self.start_time = time.time()
             self._start_ts  = ts
-            self.running = True
             self.crf = crf
+            self.frame_count = 0
             self._audio_proc = None
             self._audio_file = None
-            self._audio_requested = bool(audio)
+            audio = bool(audio) and AUDIO_AVAILABLE      # no mic → no silent track
+            self._audio_requested = audio
+            self._hw = False
+            if camera is not None and CAM_BACKEND == "picamera2" and not camera.effects_active():
+                from .backends import picamera2_backend
+                self.filename = f"Video_{ts}.mp4"
+                try:
+                    camera.camera_job(picamera2_backend.job_record_start(VIDEOS_DIR / self.filename))
+                    self._hw = True
+                except RuntimeError as e:
+                    logging.warning("hardware recording unavailable (%s); recording the stream", e)
+            if not self._hw:
+                self.filename = f"Video_{ts}.mjpeg"
+                self._file = open(VIDEOS_DIR / self.filename, "wb")
+            self._camera = camera
+            self.start_time = time.time()
+            self.limit = float(duration or 0)
+            self.running = True
             if audio:
                 audio_path = VIDEOS_DIR / f"Video_{ts}.wav"
                 self._audio_file = str(audio_path)
@@ -172,11 +221,18 @@ class VideoRecorder:
                 except Exception:
                     self._audio_proc = None
                     self._audio_file = None
+        if self.limit > 0:
+            started = self.start_time
+            def _auto_stop():
+                time.sleep(self.limit)
+                if self.running and self.start_time == started:
+                    self.stop()
+            threading.Thread(target=_auto_stop, daemon=True, name="record-limit").start()
         return True
 
     def write(self, frame):
         with self._lock:
-            if self.running and self._file:
+            if self.running and self._file and not self._hw:
                 self._file.write(frame)
                 self.frame_count += 1
 
@@ -215,6 +271,20 @@ class VideoRecorder:
             p = Path(audio_file)
             audio_ok = p.exists() and p.stat().st_size > 4096
 
+        if self._hw and fname:
+            from .backends import picamera2_backend
+            try:
+                self._camera.camera_job(picamera2_backend.job_record_stop)
+            except RuntimeError as e:
+                logging.warning("stopping hardware recording: %s", e)
+            threading.Thread(
+                target=_finish_hw_recording,
+                args=(VIDEOS_DIR / fname, audio_file if audio_ok else None, start_ts),
+                daemon=True,
+            ).start()
+            self.last_result = fname
+            return fname, audio_ok
+
         if fname and fc > 0 and duration > 0:
             fps = max(1, round(fc / duration))
             src = VIDEOS_DIR / fname
@@ -224,6 +294,7 @@ class VideoRecorder:
                 args=(src, dst, fps, self.crf, audio_file if audio_ok else None, start_ts),
                 daemon=True,
             ).start()
+        self.last_result = fname.replace(".mjpeg", ".mp4") if fname else None
         return fname, audio_ok
 
     def status(self):
@@ -233,7 +304,10 @@ class VideoRecorder:
                 "filename":    self.filename,
                 "duration":    round(time.time() - self.start_time, 1)
                                if self.start_time and self.running else 0,
+                "limit":       getattr(self, "limit", 0),
+                "hardware":    getattr(self, "_hw", False),
                 "frame_count": self.frame_count,
+                "last":        getattr(self, "last_result", None),
             }
 
 

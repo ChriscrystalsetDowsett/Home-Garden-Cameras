@@ -98,7 +98,7 @@ def _build_exif_bytes(metadata: dict, width: int, height: int):
 
         exif_ifd = {
             _piexif.ExifIFD.ExifVersion:      b"0231",
-            _piexif.ExifIFD.FlashPixVersion:  b"0100",
+            _piexif.ExifIFD.FlashpixVersion:  b"0100",
             _piexif.ExifIFD.ColorSpace:       1,            # sRGB
             _piexif.ExifIFD.PixelXDimension:  width,
             _piexif.ExifIFD.PixelYDimension:  height,
